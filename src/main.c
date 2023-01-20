@@ -36,13 +36,11 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 #define TIMER_EXPIRY_US (TIMESLOT_LENGTH_US - 50)
 #define TIMER_EXPIRY_US_MULTI 		 (50)
 
-
 #define MPSL_THREAD_PRIO             CONFIG_MPSL_THREAD_COOP_PRIO
 #define STACKSIZE                    CONFIG_MAIN_STACK_SIZE
 #define THREAD_PRIORITY              K_LOWEST_APPLICATION_THREAD_PRIO
 
 static bool request_in_cb = true;
-
 
 uint16_t number_of_times_extended = 0;
 
@@ -202,12 +200,12 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(
 
 		//display_timeslot(true);
 		p_ret_val = &signal_callback_return_param;
-
 		break;
 
 	case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED:
 		LOG_INF("Extension failed!");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
+		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
+		signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
 
 		p_ret_val = &signal_callback_return_param;
 		display_timeslot(false);
@@ -286,46 +284,20 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(
 	
 #if defined(CONFIG_SOC_SERIES_NRF53X)
 	NVIC_SetPendingIRQ(SWI1_IRQn);
-	//NVIC_SetPendingIRQ(SWI2_IRQn); 
-
 #elif defined(CONFIG_SOC_SERIES_NRF52X)
 	NVIC_SetPendingIRQ(SWI1_EGU1_IRQn);
-	//NVIC_SetPendingIRQ(SWI2_EGU2_IRQn); 
-
 #endif
 	return p_ret_val;
 }
 
-static void mpsl_timeslot_demo(void)
+static void timeslot_init(void)
 {
 	int err;
-	char input_char;
 	enum mpsl_timeslot_call api_call;
 
-	printk("-----------------------------------------------------\n");
-	printk("Press a key to open session and request timeslots:\n");
-	printk("* 'a' for a session where each timeslot makes a new request\n");
-	printk("* 'b' for a session with a single timeslot request\n");
-	printk("* 'c' for a session with continous extended timeslot request\n"); //added
-	printk("* 'd' for 10 extended timeslot requests, which then fails, and a new is requested\n"); //added
-	printk("* 'e' for a session with multiple firings of timer0, to demo its feasability\n"); //added
-
-	input_char = console_getchar();
-	printk("%c\n", input_char);
-
-	if (input_char == 'a') {
-		request_in_cb = true;
-		request_extension=false;
-	} else if (input_char == 'b') {
-		request_in_cb = false;
-		request_extension=false;
-	} else if (input_char == 'c') {
-		request_in_cb = true;
-		request_extension = true;
-	} else {
-		return;
-	}
-
+	request_in_cb = true;
+	request_extension = true;
+	
 	api_call = OPEN_SESSION;
 	err = k_msgq_put(&mpsl_api_msgq, &api_call, K_FOREVER);
 	if (err) {
@@ -340,15 +312,6 @@ static void mpsl_timeslot_demo(void)
 		k_oops();
 	}
 
-	printk("Press any key to close the session.\n");
-	console_getchar();
-
-	api_call = CLOSE_SESSION;
-	err = k_msgq_put(&mpsl_api_msgq, &api_call, K_FOREVER);
-	if (err) {
-		LOG_ERR("Message sent error: %d", err);
-		k_oops();
-	}
 }
 
 /* To ensure thread safe operation, call all MPSL APIs from a non-preemptible
@@ -414,28 +377,21 @@ void main(void)
 		return;
 	}
 
-	printk("-----------------------------------------------------\n");
-	printk("             Nordic MPSL Timeslot sample\n");
+	printk("ESB BLE Multiprotocol Example\n");
 
 #if defined(CONFIG_SOC_SERIES_NRF53X)
 	IRQ_DIRECT_CONNECT(SWI1_IRQn, 1, swi1_isr, 0);
 	irq_enable(SWI1_IRQn);
-
-	//IRQ_DIRECT_CONNECT(SWI2_IRQn, 1, swi2_isr, 0); 
-	//irq_enable(SWI2_IRQn);	 
-
 #elif defined(CONFIG_SOC_SERIES_NRF52X)
 	IRQ_DIRECT_CONNECT(SWI1_EGU1_IRQn, 1, swi1_isr, 0);
 	irq_enable(SWI1_EGU1_IRQn);
-
-	//IRQ_DIRECT_CONNECT(SWI2_EGU2_IRQn, 1, swi2_isr, 0); 
-	//irq_enable(SWI2_EGU2_IRQn); 
 #endif
 
 	app_bt_init();
 
+	timeslot_init();
+
 	while (1) {
-		mpsl_timeslot_demo();
 		k_sleep(K_MSEC(1000));
 	}
 }
