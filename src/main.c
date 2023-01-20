@@ -22,11 +22,16 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 #include <hal/nrf_timer.h>
 #include <zephyr/drivers/gpio.h> 
 
+#include <dk_buttons_and_leds.h>
+#include "app_bt_lbs.h"
+
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
+#define TIMESLOT_LED                DK_LED4
+
 #define TIMESLOT_REQUEST_DISTANCE_US (1000000)
-#define TIMESLOT_LENGTH_US           (200)
-#define EXTRA 							10
+#define TIMESLOT_LENGTH_US           (5000)
+#define EXTRA 						 10
 #define TIMER_EXPIRY_US_EARLY (TIMESLOT_LENGTH_US- MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - EXTRA)
 #define TIMER_EXPIRY_US (TIMESLOT_LENGTH_US - 50)
 #define TIMER_EXPIRY_US_MULTI 		 (50)
@@ -48,7 +53,7 @@ static bool user_request_extension_fail = false;
 static bool request_multi_fire = false;
 static bool request_extension = false; 
 
-static uint32_t extension_time_us = MPSL_TIMESLOT_EXTENSION_TIME_MIN_US*5000;
+static uint32_t extension_time_us = 5000;
 static uint32_t invalid_extension_time_us = MPSL_TIMESLOT_EXTENSION_TIME_MIN_US*0;
 static uint8_t timeslot_number = 0;
 static uint8_t firing_number = 0;
@@ -90,23 +95,7 @@ K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
 
 /* Not really implementented, but could display when in the timeslot using this */
 int display_timeslot(bool mode){
-	int ret=0;
-	if (!device_is_ready(led.port)) {
-		LOG_INF("led not ready\n");
-		return -1;
-	}
-
-	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
-	if (ret < 0) {
-		LOG_INF("led error \n");
-		return -1;
-	}
-	if (mode){
-		ret = gpio_pin_set_dt(&led,1);
-		if (ret < 0){
-			return -1;
-		}
-	}
+	mode ? dk_set_led_off(TIMESLOT_LED) : dk_set_led_on(TIMESLOT_LED);
 	return 0;
 }
 
@@ -225,12 +214,10 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(
 		else if (request_in_cb && request_extension && !request_multi_fire) {
 			/* Request extension. This occurs TIMER_EXPIRY_US_EARLY after timeslot began  */
 			if (user_request_extension_fail && number_of_times_extended==10){ /* However in this case we want it to fail */
-				signal_callback_return_param.params.extend.length_us = 
-				invalid_extension_time_us;
+				signal_callback_return_param.params.extend.length_us = invalid_extension_time_us;
 			}
 			else{
-				signal_callback_return_param.params.extend.length_us = 
-				extension_time_us; 
+				signal_callback_return_param.params.extend.length_us = extension_time_us; 
 			}
 
 			signal_callback_return_param.callback_action =
@@ -246,8 +233,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(
 			LOG_INF("This is timeslot number: %d, and firing number: %d\n", timeslot_number, firing_number+=1);
 
 			/* Timeslot will be ended */
-			signal_callback_return_param.callback_action =
-				MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 		}
 
 		else {
@@ -511,10 +497,15 @@ void main(void)
 {
 
 	int err = console_init();
-
 	if (err) {
 		LOG_ERR("Initialize console device error");
 		k_oops();
+	}
+
+	err = dk_leds_init();
+	if (err) {
+		printk("LEDs init failed (err %d)\n", err);
+		return;
 	}
 
 	printk("-----------------------------------------------------\n");
@@ -534,6 +525,8 @@ void main(void)
 	//IRQ_DIRECT_CONNECT(SWI2_EGU2_IRQn, 1, swi2_isr, 0); 
 	//irq_enable(SWI2_EGU2_IRQn); 
 #endif
+
+	app_bt_init();
 
 	while (1) {
 		mpsl_timeslot_demo();
