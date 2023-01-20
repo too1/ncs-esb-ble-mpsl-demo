@@ -16,6 +16,7 @@ endif()
 target_sources(app PRIVATE
   src/main.c
   src/app_bt_lbs.c
+  src/app_timeslot.c
 )
 # NORDIC SDK APP END
 zephyr_library_include_directories(.)
