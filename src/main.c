@@ -99,18 +99,18 @@ ISR_DIRECT_DECLARE(swi1_isr)
 	while (!ring_buf_is_empty(&callback_ring_buf)) {
 		if (ring_buf_get(&callback_ring_buf, &signal_type, 1) == 1) {
 			switch (signal_type) {
-			case MPSL_TIMESLOT_SIGNAL_START:
-				LOG_DBG("Callback: Timeslot start\n");
-				break;
-			case MPSL_TIMESLOT_SIGNAL_TIMER0:
-				LOG_DBG("Callback: Timer0 signal\n");
-				break;
-			case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED: 
-				LOG_DBG("Callback: Wops\n");
-				break;			
-			default:
-				LOG_DBG("Callback: Other signal: %d\n", signal_type);
-				break;
+				case MPSL_TIMESLOT_SIGNAL_START:
+					LOG_DBG("Callback: Timeslot start\n");
+					break;
+				case MPSL_TIMESLOT_SIGNAL_TIMER0:
+					LOG_DBG("Callback: Timer0 signal\n");
+					break;
+				case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED: 
+					LOG_DBG("Callback: Wops\n");
+					break;			
+				default:
+					LOG_DBG("Callback: Other signal: %d\n", signal_type);
+					break;
 			}
 		}
 	}
@@ -136,113 +136,113 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(
 	mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
 
 	switch (signal_type) {
-	case MPSL_TIMESLOT_SIGNAL_START:
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-		p_ret_val = &signal_callback_return_param;
+		case MPSL_TIMESLOT_SIGNAL_START:
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
 
-		/*	Extension requested. CC set to expire within a smaller timeframe in order to request an expansion of the timeslot */
-		nrf_timer_bit_width_set(NRF_TIMER0, NRF_TIMER_BIT_WIDTH_32);
-		nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0, TIMER_EXPIRY_US_EARLY);
-		nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
+			/*	Extension requested. CC set to expire within a smaller timeframe in order to request an expansion of the timeslot */
+			nrf_timer_bit_width_set(NRF_TIMER0, NRF_TIMER_BIT_WIDTH_32);
+			nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0, TIMER_EXPIRY_US_EARLY);
+			nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
 
-		callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_START);
+			callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_START);
 
-		display_timeslot(true);
-		break;
+			display_timeslot(true);
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_TIMER0:
-		/* Clear event */
-		nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
-		nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE0);
+		case MPSL_TIMESLOT_SIGNAL_TIMER0:
+			/* Clear event */
+			nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
+			nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE0);
 
-		signal_callback_return_param.params.extend.length_us = TIMESLOT_LENGTH_US; 
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
+			signal_callback_return_param.params.extend.length_us = TIMESLOT_LENGTH_US; 
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
 
-		p_ret_val = &signal_callback_return_param;
-		break;
+			p_ret_val = &signal_callback_return_param;
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_EXTEND_SUCCEEDED:
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+		case MPSL_TIMESLOT_SIGNAL_EXTEND_SUCCEEDED:
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 
-		/* Set next trigger time to be the current + Timer expiry early */
-		uint32_t current_cc = nrf_timer_cc_get(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0);
-		uint32_t next_trigger_time = current_cc + TIMESLOT_LENGTH_US;
-		nrf_timer_bit_width_set(NRF_TIMER0, NRF_TIMER_BIT_WIDTH_32);
-		nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0, next_trigger_time);
-		nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
+			/* Set next trigger time to be the current + Timer expiry early */
+			uint32_t current_cc = nrf_timer_cc_get(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0);
+			uint32_t next_trigger_time = current_cc + TIMESLOT_LENGTH_US;
+			nrf_timer_bit_width_set(NRF_TIMER0, NRF_TIMER_BIT_WIDTH_32);
+			nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0, next_trigger_time);
+			nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
 
-		p_ret_val = &signal_callback_return_param;
-		break;
+			p_ret_val = &signal_callback_return_param;
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED:
-		LOG_DBG("Extension failed!");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
-		signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
+		case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED:
+			LOG_DBG("Extension failed!");
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
+			signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
 
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		break;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_RADIO:
+		case MPSL_TIMESLOT_SIGNAL_RADIO:
 
-		break;
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_OVERSTAYED:
-		LOG_WRN("something overstayed!");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		break;
+		case MPSL_TIMESLOT_SIGNAL_OVERSTAYED:
+			LOG_WRN("something overstayed!");
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_CANCELLED:
-		LOG_DBG("something cancelled!");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		
-		// In this case returning SIGNAL_ACTION_REQUEST causes hardfault. We have to request a new timeslot instead, from thread context. 
-		timeslot_request_new();
-		break;
+		case MPSL_TIMESLOT_SIGNAL_CANCELLED:
+			LOG_DBG("something cancelled!");
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			
+			// In this case returning SIGNAL_ACTION_REQUEST causes hardfault. We have to request a new timeslot instead, from thread context. 
+			timeslot_request_new();
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_BLOCKED:
-		LOG_INF("something blocked!");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
+		case MPSL_TIMESLOT_SIGNAL_BLOCKED:
+			LOG_INF("something blocked!");
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
 
-		// Request a new timeslot in this case
-		timeslot_request_new();
-		break;
+			// Request a new timeslot in this case
+			timeslot_request_new();
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_INVALID_RETURN:
-		LOG_WRN("something gave invalid return\n");
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		break;
+		case MPSL_TIMESLOT_SIGNAL_INVALID_RETURN:
+			LOG_WRN("something gave invalid return\n");
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_SESSION_IDLE:
-		LOG_INF("idle");
-		callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_SESSION_IDLE);
+		case MPSL_TIMESLOT_SIGNAL_SESSION_IDLE:
+			LOG_INF("idle");
+			callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_SESSION_IDLE);
 
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		break;
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			break;
 
-	case MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED:
-		LOG_INF("Session closed");
-		callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED);
+		case MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED:
+			LOG_INF("Session closed");
+			callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED);
 
-		signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
-		p_ret_val = &signal_callback_return_param;
-		display_timeslot(false);
-		break;
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
+			display_timeslot(false);
+			break;
 
-	default:
-		LOG_ERR("unexpected signal: %u", signal_type);
-		k_oops();
-		break;
+		default:
+			LOG_ERR("unexpected signal: %u", signal_type);
+			k_oops();
+			break;
 	}
 	
 #if defined(CONFIG_SOC_SERIES_NRF53X)
@@ -282,35 +282,35 @@ static void mpsl_nonpreemptible_thread(void)
 	while (1) {
 		if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) == 0) {
 			switch (api_call) {
-			case OPEN_SESSION:
-				err = mpsl_timeslot_session_open(
-					mpsl_timeslot_callback,
-					&session_id);
-				if (err) {
-					LOG_ERR("Timeslot session open error: %d", err);
+				case OPEN_SESSION:
+					err = mpsl_timeslot_session_open(
+						mpsl_timeslot_callback,
+						&session_id);
+					if (err) {
+						LOG_ERR("Timeslot session open error: %d", err);
+						k_oops();
+					}
+					break;
+				case MAKE_REQUEST:
+					err = mpsl_timeslot_request(
+						session_id,
+						&timeslot_request_earliest);
+					if (err) {
+						LOG_ERR("Timeslot request error: %d", err);
+						k_oops();
+					}
+					break;
+				case CLOSE_SESSION:
+					err = mpsl_timeslot_session_close(session_id);
+					if (err) {
+						LOG_ERR("Timeslot session close error: %d", err);
+						k_oops();
+					}
+					break;
+				default:
+					LOG_ERR("Wrong timeslot API call");
 					k_oops();
-				}
-				break;
-			case MAKE_REQUEST:
-				err = mpsl_timeslot_request(
-					session_id,
-					&timeslot_request_earliest);
-				if (err) {
-					LOG_ERR("Timeslot request error: %d", err);
-					k_oops();
-				}
-				break;
-			case CLOSE_SESSION:
-				err = mpsl_timeslot_session_close(session_id);
-				if (err) {
-					LOG_ERR("Timeslot session close error: %d", err);
-					k_oops();
-				}
-				break;
-			default:
-				LOG_ERR("Wrong timeslot API call");
-				k_oops();
-				break;
+					break;
 			}
 		}
 	}
@@ -319,7 +319,7 @@ static void mpsl_nonpreemptible_thread(void)
 void main(void)
 {
 	int err;
-	
+
 	err = dk_leds_init();
 	if (err) {
 		printk("LEDs init failed (err %d)\n", err);
