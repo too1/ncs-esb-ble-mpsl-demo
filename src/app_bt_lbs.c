@@ -167,36 +167,34 @@ static int init_button(void)
 	return err;
 }
 
-void app_bt_init(void)
+int app_bt_init(void)
 {
 	int err;
-
-	printk("Starting Bluetooth Peripheral LBS example\n");
 
 	err = init_button();
 	if (err) {
 		printk("Button init failed (err %d)\n", err);
-		return;
+		return err;
 	}
 
 	if (IS_ENABLED(CONFIG_BT_LBS_SECURITY_ENABLED)) {
 		err = bt_conn_auth_cb_register(&conn_auth_callbacks);
 		if (err) {
 			printk("Failed to register authorization callbacks.\n");
-			return;
+			return err;
 		}
 
 		err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
 		if (err) {
 			printk("Failed to register authorization info callbacks.\n");
-			return;
+			return err;
 		}
 	}
 
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return err;
 	}
 
 	printk("Bluetooth initialized\n");
@@ -208,14 +206,16 @@ void app_bt_init(void)
 	err = bt_lbs_init(&lbs_callbacs);
 	if (err) {
 		printk("Failed to init LBS (err:%d)\n", err);
-		return;
+		return err;
 	}
 
 	err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
-		return;
+		return err;
 	}
 
 	printk("Advertising successfully started\n");
+
+	return 0;
 }

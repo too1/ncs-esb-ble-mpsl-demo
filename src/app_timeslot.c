@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 #define THREAD_PRIORITY              K_LOWEST_APPLICATION_THREAD_PRIO
 
 static timeslot_callback_t m_callback;
+static volatile bool m_in_timeslot = false;
 
 /* MPSL API calls that can be requested for the non-preemptible thread */
 enum mpsl_timeslot_call {
@@ -45,6 +46,21 @@ RING_BUF_DECLARE(callback_ring_buf, 10);
 
 /* Message queue for requesting MPSL API calls to non-preemptible thread */
 K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
+
+static void set_timeslot_active_status(bool active)
+{
+	if (active) {
+		if (!m_in_timeslot) {
+			m_in_timeslot = true;
+			m_callback(APP_TS_STARTED);
+		}
+	} else {
+		if (m_in_timeslot) {
+			m_in_timeslot = false;
+			m_callback(APP_TS_STOPPED);
+		}
+	}
+}
 
 static void timeslot_session_open(void)
 {
@@ -120,7 +136,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 
 			callback_ring_buf_put((uint8_t)MPSL_TIMESLOT_SIGNAL_START);
 
-			m_callback(true);
+			set_timeslot_active_status(true);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_TIMER0:
@@ -153,25 +169,29 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
 
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_RADIO:
+			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+			p_ret_val = &signal_callback_return_param;
 
+			// We have to manually call the RADIO IRQ handler when the RADIO signal occurs
+			RADIO_IRQHandler();
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_OVERSTAYED:
 			LOG_WRN("something overstayed!");
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_CANCELLED:
 			LOG_DBG("something cancelled!");
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			
 			// In this case returning SIGNAL_ACTION_REQUEST causes hardfault. We have to request a new timeslot instead, from thread context. 
 			timeslot_request_new();
@@ -181,7 +201,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			LOG_INF("something blocked!");
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 
 			// Request a new timeslot in this case
 			timeslot_request_new();
@@ -191,7 +211,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			LOG_WRN("something gave invalid return");
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_SESSION_IDLE:
@@ -200,7 +220,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED:
@@ -209,7 +229,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
-			m_callback(false);
+			set_timeslot_active_status(false);
 			break;
 
 		default:
