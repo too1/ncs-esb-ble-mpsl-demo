@@ -12,6 +12,7 @@ static app_esb_event_t 	  m_event;
 
 static struct esb_payload rx_payload;
 
+static app_esb_mode_t m_mode;
 static bool m_active = false;
 
 static void event_handler(struct esb_evt const *event)
@@ -79,7 +80,7 @@ static int clocks_start(void)
 	return 0;
 }
 
-static int esb_initialize(void)
+static int esb_initialize(app_esb_mode_t mode)
 {
 	int err;
 
@@ -97,7 +98,7 @@ static int esb_initialize(void)
 	config.retransmit_count = 8;
 	config.bitrate = ESB_BITRATE_2MBPS;
 	config.event_handler = event_handler;
-	config.mode = ESB_MODE_PTX;
+	config.mode = (mode == APP_ESB_MODE_PTX) ? ESB_MODE_PTX : ESB_MODE_PRX;
 	config.tx_mode = ESB_TXMODE_MANUAL_START;
 	config.selective_auto_ack = true;
 
@@ -122,6 +123,10 @@ static int esb_initialize(void)
 		return err;
 	}
 
+	if (mode == APP_ESB_MODE_PRX) {
+		esb_start_rx();
+	}
+
 	return 0;
 }
 
@@ -131,13 +136,14 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 	int ret;
 
 	m_callback = callback;
+	m_mode = mode;
 	
 	ret = clocks_start();
 	if (ret < 0) {
 		return ret;
 	}
 
-	ret = esb_initialize();
+	ret = esb_initialize(mode);
 	if (ret < 0) {
 		return ret;
 	}
@@ -176,7 +182,7 @@ int app_esb_suspend(void)
 
 int app_esb_resume(void)
 {
-	int err = esb_initialize();
+	int err = esb_initialize(m_mode);
 	m_active = true;
 	return err;
 }

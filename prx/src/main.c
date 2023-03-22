@@ -51,7 +51,7 @@ void on_esb_callback(app_esb_event_t *event)
 			LOG_INF("ESB TX failed");
 			break;
 		case APP_ESB_EVT_RX:
-			LOG_INF("ESB RX");
+			LOG_INF("ESB RX: 0x%.2X-0x%.2X-0x%.2X-0x%.2X", event->buf[0], event->buf[1], event->buf[2], event->buf[3]);
 			break;
 		default:
 			LOG_ERR("Unknown APP ESB event!");
@@ -69,7 +69,7 @@ void main(void)
 		return;
 	}
 
-	LOG_INF("ESB BLE Multiprotocol Example");
+	LOG_INF("ESB PRX BLE Multiprotocol Example");
 
 	err = app_bt_init();
 	if (err) {
@@ -77,7 +77,7 @@ void main(void)
 		return;
 	}
 
-	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
+	err = app_esb_init(APP_ESB_MODE_PRX, on_esb_callback);
 	if (err) {
 		LOG_ERR("app_esb init failed (err %d)", err);
 		return;
@@ -85,16 +85,8 @@ void main(void)
 
 	timeslot_init(on_timeslot_start_stop);
 
-	uint8_t esb_tx_buf[8] = {0};
 	while (1) {
-		err = app_esb_send(esb_tx_buf, 8);
-		if (err < 0) {
-			LOG_INF("ESB TX upload failed (err %i)", err);
-		}
-		else {
-			LOG_INF("ESB TX upload %i", esb_tx_buf[0]);
-			esb_tx_buf[0]++;
-		}
+
 
 		k_sleep(K_MSEC(2000));
 	}
