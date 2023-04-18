@@ -10,30 +10,55 @@ static app_esb_callback_t m_callback;
 
 static app_esb_event_t 	  m_event;
 
+// Define a buffer of payloads (8 items by default) to store TX payloads in between timeslots
+K_MSGQ_DEFINE(m_msgq_tx_payloads, sizeof(struct esb_payload), 8, 4);
+
 static struct esb_payload rx_payload;
 
 static app_esb_mode_t m_mode;
 static bool m_active = false;
+static bool m_in_safe_period = false;
+
+static int pull_packet_from_tx_msgq(void);
 
 static void event_handler(struct esb_evt const *event)
 {
+	static struct esb_payload tmp_payload;
 	switch (event->evt_id) {
 		case ESB_EVENT_TX_SUCCESS:
 			LOG_DBG("TX SUCCESS EVENT");
 
+			// Remove the oldest item in the TX queue
+			k_msgq_get(&m_msgq_tx_payloads, &tmp_payload, K_NO_WAIT);
+			
+			// Forward an event to the application 
 			m_event.evt_type = APP_ESB_EVT_TX_SUCCESS;
 			m_event.data_length = 0;
 			m_callback(&m_event);
+
+			// Check if there are more messages in the queue
+			if(m_in_safe_period && pull_packet_from_tx_msgq() == 0){
+				LOG_DBG("PCK loaded in ESB TX callback");
+			}
 			break;
+
 		case ESB_EVENT_TX_FAILED:
 			LOG_DBG("TX FAILED EVENT");
+
+			// Ignore this event for now, since the payload is retained in the queue and will be retransmitted at a later point
 			
-			m_event.evt_type = APP_ESB_EVT_TX_FAIL;
-			m_event.data_length = 0;
-			m_callback(&m_event);
-			
+			//m_event.evt_type = APP_ESB_EVT_TX_FAIL;
+			//m_event.data_length = 0;
+			//m_callback(&m_event);
+		
 			esb_flush_tx();
+
+			// Check if there are more messages in the queue
+			if(m_in_safe_period && pull_packet_from_tx_msgq() == 0){
+				LOG_DBG("PCK loaded in ESB fail callback");
+			}
 			break;
+
 		case ESB_EVENT_RX_RECEIVED:
 			while (esb_read_rx_payload(&rx_payload) == 0) {
 				LOG_DBG("Packet received, len %d : ", rx_payload.length);
@@ -95,7 +120,7 @@ static int esb_initialize(app_esb_mode_t mode)
 
 	config.protocol = ESB_PROTOCOL_ESB_DPL;
 	config.retransmit_delay = 600;
-	config.retransmit_count = 8;
+	config.retransmit_count = 1;
 	config.bitrate = ESB_BITRATE_2MBPS;
 	config.event_handler = event_handler;
 	config.mode = (mode == APP_ESB_MODE_PTX) ? ESB_MODE_PTX : ESB_MODE_PRX;
@@ -130,6 +155,21 @@ static int esb_initialize(app_esb_mode_t mode)
 	return 0;
 }
 
+static int pull_packet_from_tx_msgq(void)
+{
+	int ret;
+	static struct esb_payload tx_payload;
+	if (k_msgq_peek(&m_msgq_tx_payloads, &tx_payload) == 0) {
+		ret = esb_write_payload(&tx_payload);
+		if (ret < 0) return ret;
+		esb_start_tx();		
+
+		return 0;
+	}
+	
+	return -ENOMEM;
+}
+
 
 int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 {
@@ -159,21 +199,39 @@ int app_esb_send(uint8_t *buf, uint32_t length)
 	tx_payload.noack = false;
 	memcpy(tx_payload.data, buf, length);
 	tx_payload.length = length;
-	if(m_active) {
-		ret = esb_write_payload(&tx_payload);
-		if (ret < 0) return ret;
-		ret = esb_start_tx();
-		return ret;
+	ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+	if (ret == 0) {
+		if (m_active) {
+			pull_packet_from_tx_msgq();
+		}
 	}
 	else {
-		return -EBUSY;
+		return -ENOMEM;
 	}
+	return 0;
+}
+
+void app_esb_safe_period_start_stop(bool started)
+{
+	m_in_safe_period = started;
 }
 
 int app_esb_suspend(void)
 {
 	m_active = false;
+	
+	irq_disable(RADIO_IRQn);
+	NRF_TIMER2->TASKS_STOP = 1;
+	NRF_RADIO->SHORTS = 0;
+	NRF_RADIO->INTENCLR = 0xFFFFFFFF;
+	NVIC_ClearPendingIRQ(RADIO_IRQn);
+	if(NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled) {
+		NRF_RADIO->EVENTS_DISABLED = 0;
+		NRF_RADIO->TASKS_DISABLE = 1;
+		while(NRF_RADIO->EVENTS_DISABLED == 0);
+	}
 	esb_disable();
+	//(void)NRF_RADIO->POWER;
 
 	// Todo: Figure out how to use the esb_suspend() function rather than having to disable at the end of every timeslot
 	//esb_suspend();
@@ -184,5 +242,7 @@ int app_esb_resume(void)
 {
 	int err = esb_initialize(m_mode);
 	m_active = true;
+	m_in_safe_period = true;
+	pull_packet_from_tx_msgq();
 	return err;
 }

@@ -23,4 +23,6 @@ int app_esb_suspend(void);
 
 int app_esb_resume(void);
 
+void app_esb_safe_period_start_stop(bool started);
+
 #endif
