@@ -201,7 +201,7 @@ int app_esb_send(uint8_t *buf, uint32_t length)
 	tx_payload.length = length;
 	ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 	if (ret == 0) {
-		if (m_active) {
+		if (m_active && m_in_safe_period) {
 			pull_packet_from_tx_msgq();
 		}
 	}
@@ -220,19 +220,24 @@ int app_esb_suspend(void)
 {
 	m_active = false;
 	
-	irq_disable(RADIO_IRQn);
+	uint32_t irq_key = irq_lock();
+
+	//irq_disable(RADIO_IRQn);
+	NVIC_DisableIRQ(RADIO_IRQn);
+
+	NRF_RADIO->EVENTS_DISABLED = 0;
+	NRF_RADIO->TASKS_DISABLE = 1;
+	while(NRF_RADIO->EVENTS_DISABLED == 0);
+
 	NRF_TIMER2->TASKS_STOP = 1;
 	NRF_RADIO->SHORTS = 0;
 	NRF_RADIO->INTENCLR = 0xFFFFFFFF;
-	NVIC_ClearPendingIRQ(RADIO_IRQn);
-	if(NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled) {
-		NRF_RADIO->EVENTS_DISABLED = 0;
-		NRF_RADIO->TASKS_DISABLE = 1;
-		while(NRF_RADIO->EVENTS_DISABLED == 0);
-	}
+	
 	esb_disable();
-	//(void)NRF_RADIO->POWER;
 
+	NVIC_ClearPendingIRQ(RADIO_IRQn);
+
+	irq_unlock(irq_key);
 	// Todo: Figure out how to use the esb_suspend() function rather than having to disable at the end of every timeslot
 	//esb_suspend();
 	return 0;

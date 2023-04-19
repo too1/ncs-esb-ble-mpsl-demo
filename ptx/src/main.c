@@ -41,9 +41,11 @@ void on_timeslot_start_stop(timeslot_callback_type_t type)
 			app_esb_suspend();
 			break;
 		case APP_TS_SAFE_PERIOD_STARTED:
+			NRF_P1->OUTSET = BIT(8);
 			app_esb_safe_period_start_stop(true);
 			break;
 		case APP_TS_SAFE_PERIOD_ENDED:
+			NRF_P1->OUTCLR = BIT(8);
 			app_esb_safe_period_start_stop(false);
 			break; 
 	}
@@ -76,22 +78,24 @@ void on_esb_callback(app_esb_event_t *event)
 #define GPIOTE_CH_TGL   2
 #define PIN_TX (32 + 3)
 #define PIN_RX (32 + 4)
-#define PIN_TGL (32 + 8)
+#define PIN_TGL (32 + 1)
 #define PIN_RESET 7
 
 static void debug_gpio_init(void)
 {
-	// Set P1.01-P1.05 as outputs
-	NRF_P1->DIRSET = 0xf << 5;
+	// Set P1.01-P1.08 as outputs
+	NRF_P1->DIRSET = 0x1FE;
 	NRF_GPIOTE->CONFIG[GPIOTE_CH_TX] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
 							GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos |
 							PIN_TX << GPIOTE_CONFIG_PSEL_Pos;
 	NRF_GPIOTE->CONFIG[GPIOTE_CH_RX] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
 							GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos |
 							PIN_RX << GPIOTE_CONFIG_PSEL_Pos;
+	#if 0
 	NRF_GPIOTE->CONFIG[GPIOTE_CH_TGL] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
 							GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos |
 							PIN_TGL << GPIOTE_CONFIG_PSEL_Pos;
+	#endif
 	NRF_PPI->CH[PPI_CH_TX_EN].EEP = (uint32_t)&NRF_RADIO->EVENTS_TXREADY;
 	NRF_PPI->CH[PPI_CH_TX_EN].TEP = (uint32_t)&NRF_GPIOTE->TASKS_SET[GPIOTE_CH_TX];
 	NRF_PPI->CH[PPI_CH_RX_EN].EEP = (uint32_t)&NRF_RADIO->EVENTS_RXREADY;
@@ -102,7 +106,7 @@ static void debug_gpio_init(void)
 	NRF_PPI->CH[PPI_CH_TGL].EEP = (uint32_t)&NRF_RADIO->EVENTS_ADDRESS;
 	NRF_PPI->CH[PPI_CH_TGL].TEP = (uint32_t)&NRF_GPIOTE->TASKS_OUT[GPIOTE_CH_TGL];
 	NRF_PPI->CHENSET = BIT(PPI_CH_TX_EN) | BIT(PPI_CH_RX_EN) |
-					   BIT(PPI_CH_TRX_DISABLE) | BIT(PPI_CH_TGL); 
+					   BIT(PPI_CH_TRX_DISABLE);// | BIT(PPI_CH_TGL); 
 
 
 	NRF_P1->PIN_CNF[PIN_RESET] = GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos |
@@ -155,7 +159,6 @@ void main(void)
 			LOG_INF("ESB TX upload %.2x-%.2x", (tx_counter& 0xFF), ((tx_counter >> 8) & 0xFF));
 			tx_counter++;
 		}
-
 		k_sleep(K_MSEC(100));
 	}
 }

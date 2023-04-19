@@ -14,7 +14,7 @@ LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 #define TIMESLOT_REQUEST_TIMEOUT_US  1000000
 #define TIMESLOT_LENGTH_US           10000
 #define TIMESLOT_SAFE_PERIOD		 (TIMESLOT_LENGTH_US - 3000)
-#define TIMESLOT_EXT_MARGIN_MARGIN	 100
+#define TIMESLOT_EXT_MARGIN_MARGIN	 0
 #define TIMER_EXPIRY_US_EARLY 		 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_MARGIN)
 
 #define MPSL_THREAD_PRIO             CONFIG_MPSL_THREAD_COOP_PRIO
@@ -64,14 +64,15 @@ static void set_timeslot_active_status(bool active)
 	if (active) {
 		if (!m_in_timeslot) {
 			m_in_timeslot = true;
-			//callback_ring_buf_put(0x80);
-			m_callback(APP_TS_STARTED);
+			callback_ring_buf_put(0x80);
+			//m_callback(APP_TS_STARTED);
 		}
 	} else {
 		if (m_in_timeslot) {
 			m_in_timeslot = false;
-			//callback_ring_buf_put(0x81);
-			m_callback(APP_TS_STOPPED);
+			//NRF_TIMER0->TASKS_STOP = 1;
+			callback_ring_buf_put(0x81);
+			//m_callback(APP_TS_STOPPED);
 		}
 	}
 }
@@ -119,6 +120,12 @@ ISR_DIRECT_DECLARE(swi1_isr)
 				case 0x81:
 					m_callback(APP_TS_STOPPED);
 					break;
+				case 0x82:
+					m_callback(APP_TS_SAFE_PERIOD_STARTED);
+					break;
+				case 0x83:
+					m_callback(APP_TS_SAFE_PERIOD_ENDED);
+					break;
 				default:
 					LOG_DBG("Callback: Other signal: %d", signal_type);
 					break;
@@ -130,10 +137,12 @@ ISR_DIRECT_DECLARE(swi1_isr)
 	return 1;
 }
 
+static volatile int test_cnt = 0;
 static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id, uint32_t signal_type)
 {
 	(void) session_id; /* unused parameter */
 	NRF_P1->OUTSET = BIT(6);
+	test_cnt++;
 	mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
 
 	switch (signal_type) {
@@ -175,6 +184,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 
 				m_timeslot_in_first_half = !m_timeslot_in_first_half;
 				m_callback(m_timeslot_in_first_half ? APP_TS_SAFE_PERIOD_STARTED : APP_TS_SAFE_PERIOD_ENDED);
+				//callback_ring_buf_put(m_timeslot_in_first_half ? 0x82 : 0x83);
 
 				signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			}
@@ -195,6 +205,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_EXTEND_FAILED:
+			NVIC_DisableIRQ(RADIO_IRQn);
 			LOG_DBG("Extension failed!");
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
 			signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
@@ -204,6 +215,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_RADIO:
+			NRF_P1->OUTSET = BIT(4);
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
 
@@ -211,6 +223,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			if(m_in_timeslot) {
 				RADIO_IRQHandler();
 			}
+			NRF_P1->OUTCLR = BIT(4);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_OVERSTAYED:
@@ -275,6 +288,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 	//NVIC_SetPendingIRQ(SWI1_EGU1_IRQn);
 #endif
 	NRF_P1->OUTCLR = BIT(6);
+	test_cnt--;
 	return p_ret_val;
 }
 

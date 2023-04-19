@@ -1,0 +1,10 @@
+Debug pins: 
+		PTX             PRX
+1.08	Radio Address	Radio Address
+1.07	Reset			Reset
+1.06	TS Callback		TS Callback
+1.05	TS active		TS active
+1.04	Radio RX		Radio RX
+1.03	Radio TX		Radio TX
+1.02
+1.01	In safe half
