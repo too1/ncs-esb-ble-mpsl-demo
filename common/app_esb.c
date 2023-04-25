@@ -148,6 +148,8 @@ static int esb_initialize(app_esb_mode_t mode)
 		return err;
 	}
 
+	NVIC_SetPriority(RADIO_IRQn, 0);
+
 	if (mode == APP_ESB_MODE_PRX) {
 		esb_start_rx();
 	}
@@ -179,11 +181,6 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 	m_mode = mode;
 	
 	ret = clocks_start();
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = esb_initialize(mode);
 	if (ret < 0) {
 		return ret;
 	}
@@ -220,24 +217,31 @@ int app_esb_suspend(void)
 {
 	m_active = false;
 	
-	uint32_t irq_key = irq_lock();
+	if(m_mode == APP_ESB_MODE_PTX) {
+		uint32_t irq_key = irq_lock();
 
-	//irq_disable(RADIO_IRQn);
-	NVIC_DisableIRQ(RADIO_IRQn);
+		irq_disable(RADIO_IRQn);
+		NVIC_DisableIRQ(RADIO_IRQn);
 
-	NRF_RADIO->EVENTS_DISABLED = 0;
-	NRF_RADIO->TASKS_DISABLE = 1;
-	while(NRF_RADIO->EVENTS_DISABLED == 0);
+		NRF_RADIO->SHORTS = 0;
 
-	NRF_TIMER2->TASKS_STOP = 1;
-	NRF_RADIO->SHORTS = 0;
-	NRF_RADIO->INTENCLR = 0xFFFFFFFF;
-	
-	esb_disable();
+		NRF_RADIO->EVENTS_DISABLED = 0;
+		NRF_RADIO->TASKS_DISABLE = 1;
+		while(NRF_RADIO->EVENTS_DISABLED == 0);
 
-	NVIC_ClearPendingIRQ(RADIO_IRQn);
+		NRF_TIMER2->TASKS_STOP = 1;
+		NRF_RADIO->INTENCLR = 0xFFFFFFFF;
+		
+		esb_disable();
 
-	irq_unlock(irq_key);
+		NVIC_ClearPendingIRQ(RADIO_IRQn);
+
+		irq_unlock(irq_key);
+	}
+	else {
+		esb_stop_rx();
+	}
+
 	// Todo: Figure out how to use the esb_suspend() function rather than having to disable at the end of every timeslot
 	//esb_suspend();
 	return 0;
@@ -245,9 +249,16 @@ int app_esb_suspend(void)
 
 int app_esb_resume(void)
 {
-	int err = esb_initialize(m_mode);
-	m_active = true;
-	m_in_safe_period = true;
-	pull_packet_from_tx_msgq();
-	return err;
+	if(m_mode == APP_ESB_MODE_PTX) {
+		int err = esb_initialize(m_mode);
+		m_active = true;
+		m_in_safe_period = true;
+		pull_packet_from_tx_msgq();
+		return err;
+	}
+	else {
+		int err = esb_initialize(m_mode);
+		m_active = true;
+		return err;
+	}
 }
