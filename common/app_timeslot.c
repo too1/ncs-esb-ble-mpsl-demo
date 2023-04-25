@@ -256,7 +256,7 @@ ISR_DIRECT_DECLARE(swi1_isr)
 					break;
 
 				default:
-					LOG_ERR("Callback: Unknown type: %d", signal_type);
+					LOG_ERR("Callback: Unknown type: %d", type);
 					break;
 			}
 		}
