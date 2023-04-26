@@ -12,7 +12,7 @@
 LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 
 #define TIMESLOT_REQUEST_TIMEOUT_US  1000000
-#define TIMESLOT_LENGTH_US           50000
+#define TIMESLOT_LENGTH_US           40000
 #define TIMESLOT_EXT_MARGIN_MARGIN	 50
 #define TIMESLOT_ESB_DISABLE_MARGIN  500
 #define TIMER_EXPIRY_US_EARLY 		 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_MARGIN)
@@ -26,11 +26,11 @@ static volatile bool m_in_timeslot = false;
 
 // Requests and callbacks to be run serialized from an SWI interrupt
 enum mpsl_timeslot_call {
-	SWI_OPEN_SESSION,
-	SWI_MAKE_REQUEST,
-	SWI_CLOSE_SESSION,
-	SWI_TS_STARTED,
-	SWI_TS_STOPPED,
+	REQ_OPEN_SESSION,
+	REQ_MAKE_REQUEST,
+	REQ_CLOSE_SESSION,
+	CB_TS_STARTED,
+	CB_TS_STOPPED,
 };
 
 // Timeslot request
@@ -44,17 +44,18 @@ static mpsl_timeslot_request_t timeslot_request_earliest = {
 
 static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
 
-// Ring buffer for forwarding timeslot callbacks to the application
-RING_BUF_DECLARE(callback_ring_buf, 10);
+/* Message queue for requesting MPSL API calls to non-preemptible thread */
+K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
 
-static void callback_ring_buf_put(uint8_t data)
+static void schedule_request_or_callback(enum mpsl_timeslot_call call)
 {
-	uint32_t input_data_len = ring_buf_put(&callback_ring_buf, &data, 1);
-	if (input_data_len != 1) {
-		LOG_ERR("Full ring buffer, enqueue data with length %d", input_data_len);
+	int err;
+	enum mpsl_timeslot_call api_call = call;
+	err = k_msgq_put(&mpsl_api_msgq, &api_call, K_NO_WAIT);
+	if (err) {
+		LOG_ERR("Message sent error: %d", err);
 		k_oops();
 	}
-	NVIC_SetPendingIRQ(SWI1_EGU1_IRQn);
 }
 
 static void set_timeslot_active_status(bool active)
@@ -62,12 +63,14 @@ static void set_timeslot_active_status(bool active)
 	if (active) {
 		if (!m_in_timeslot) {
 			m_in_timeslot = true;
-			callback_ring_buf_put(SWI_TS_STARTED);
+			m_callback(APP_TS_STARTED);
+			//schedule_request_or_callback(CB_TS_STARTED);
 		}
 	} else {
 		if (m_in_timeslot) {
 			m_in_timeslot = false;
-			callback_ring_buf_put(SWI_TS_STOPPED);
+			m_callback(APP_TS_STOPPED);
+			//schedule_request_or_callback(CB_TS_STOPPED);
 		}
 	}
 }
@@ -166,7 +169,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			set_timeslot_active_status(false);
 			
 			// In this case returning SIGNAL_ACTION_REQUEST causes hardfault. We have to request a new timeslot instead, from thread context. 
-			callback_ring_buf_put(SWI_MAKE_REQUEST);
+			schedule_request_or_callback(REQ_MAKE_REQUEST);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_BLOCKED:
@@ -176,7 +179,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			set_timeslot_active_status(false);
 
 			// Request a new timeslot in this case
-			callback_ring_buf_put(SWI_MAKE_REQUEST);
+			schedule_request_or_callback(REQ_MAKE_REQUEST);
 			break;
 
 		case MPSL_TIMESLOT_SIGNAL_INVALID_RETURN:
@@ -211,74 +214,65 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 	return p_ret_val;
 }
 
-
-ISR_DIRECT_DECLARE(swi1_isr)
+/* To ensure thread safe operation, call all MPSL APIs from a non-preemptible
+ * thread.
+ */
+static void mpsl_nonpreemptible_thread(void)
 {
-	uint8_t type = 0;
 	int err;
-	
-	// Initialize to invalid session id
+	enum mpsl_timeslot_call api_call = 0;
+
+	/* Initialize to invalid session id */
 	mpsl_timeslot_session_id_t session_id = 0xFFu;
-	
-	while (!ring_buf_is_empty(&callback_ring_buf)) {
-		if (ring_buf_get(&callback_ring_buf, &type, 1) == 1) {
-			switch (type) {
-				case SWI_OPEN_SESSION:
+
+	while (1) {
+		if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) == 0) {
+			switch (api_call) {
+				case REQ_OPEN_SESSION:
 					err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
 					if (err) {
 						LOG_ERR("Timeslot session open error: %d", err);
 						k_oops();
 					}
 					break;
-
-				case SWI_MAKE_REQUEST:
+				case REQ_MAKE_REQUEST:
 					err = mpsl_timeslot_request(session_id, &timeslot_request_earliest);
 					if (err) {
 						LOG_ERR("Timeslot request error: %d", err);
 						k_oops();
 					}
 					break;
-
-				case SWI_CLOSE_SESSION:
+				case REQ_CLOSE_SESSION:
 					err = mpsl_timeslot_session_close(session_id);
 					if (err) {
 						LOG_ERR("Timeslot session close error: %d", err);
 						k_oops();
 					}
-					break;	
-
-				case SWI_TS_STARTED:
+					break;
+				case CB_TS_STARTED:
 					m_callback(APP_TS_STARTED);
 					break;
-
-				case SWI_TS_STOPPED:
+				case CB_TS_STOPPED:
 					m_callback(APP_TS_STOPPED);
 					break;
-
 				default:
-					LOG_ERR("Callback: Unknown type: %d", type);
+					LOG_ERR("Wrong timeslot API call");
+					k_oops();
 					break;
 			}
 		}
 	}
-
-	ISR_DIRECT_PM();
-	return 1;
 }
 
 void timeslot_init(timeslot_callback_t callback)
 {
 	m_callback = callback;
 
-	callback_ring_buf_put(SWI_OPEN_SESSION);
+	schedule_request_or_callback(REQ_OPEN_SESSION);
 
-	callback_ring_buf_put(SWI_MAKE_REQUEST);
-
-#if defined(CONFIG_SOC_SERIES_NRF53X)
-	IRQ_DIRECT_CONNECT(SWI1_IRQn, 1, swi1_isr, 0);
-	irq_enable(SWI1_IRQn);
-#elif defined(CONFIG_SOC_SERIES_NRF52X)
-	IRQ_DIRECT_CONNECT(SWI1_EGU1_IRQn, 1, swi1_isr, 0);
-	irq_enable(SWI1_EGU1_IRQn);
-#endif
+	schedule_request_or_callback(REQ_MAKE_REQUEST);
 }
+
+K_THREAD_DEFINE(mpsl_nonpreemptible_thread_id, STACKSIZE,
+		mpsl_nonpreemptible_thread, NULL, NULL, NULL,
+		K_PRIO_COOP(MPSL_THREAD_PRIO), 0, 0);
