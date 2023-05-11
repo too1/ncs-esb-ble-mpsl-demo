@@ -9,5 +9,5 @@ The example can run ESB in either PTX or PRX mode, and is compatible with the st
 Requirements
 ************
 
-- nRF Connect SDK v2.2.0
+- nRF Connect SDK v2.3.0
 - nRF52 series development kit
