@@ -12,7 +12,7 @@
 LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 
 #define TIMESLOT_REQUEST_TIMEOUT_US  1000000
-#define TIMESLOT_LENGTH_US           40000
+#define TIMESLOT_LENGTH_US           10000
 #define TIMESLOT_EXT_MARGIN_MARGIN	 50
 #define TIMESLOT_ESB_DISABLE_MARGIN  500
 #define TIMER_EXPIRY_US_EARLY 		 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_MARGIN)
@@ -109,14 +109,16 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 				
 				signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 
-				set_timeslot_active_status(false);
+				//set_timeslot_active_status(false);
 			}
 			else if(nrf_timer_event_check(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE1)) {
 				nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
 				nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE1);
 
-				signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
-				signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
+				//signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
+				//signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
+				signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
+				signal_callback_return_param.params.extend.length_us = TIMESLOT_LENGTH_US;
 			}
 			p_ret_val = &signal_callback_return_param;
 			break;
@@ -125,11 +127,11 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 
 			// Set next trigger time to be the current + Timer expiry early
-			uint32_t current_cc = nrf_timer_cc_get(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0);
+			uint32_t current_cc = nrf_timer_cc_get(NRF_TIMER0, NRF_TIMER_CC_CHANNEL1);
 			uint32_t next_trigger_time = current_cc + TIMESLOT_LENGTH_US;
 			nrf_timer_bit_width_set(NRF_TIMER0, NRF_TIMER_BIT_WIDTH_32);
-			nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL0, next_trigger_time);
-			nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
+			nrf_timer_cc_set(NRF_TIMER0, NRF_TIMER_CC_CHANNEL1, next_trigger_time);
+			nrf_timer_int_enable(NRF_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
 
 			p_ret_val = &signal_callback_return_param;
 			break;
