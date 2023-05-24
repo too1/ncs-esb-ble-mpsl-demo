@@ -55,7 +55,7 @@ void on_esb_callback(app_esb_event_t *event)
 		case APP_ESB_EVT_RX:
 			memcpy((uint8_t*)&counter, event->buf, sizeof(counter));
 			if(counter != (last_counter + 1)) {
-				LOG_ERR("Packet content error! Counter: %i, last counter %i", counter, last_counter);
+				LOG_WRN("Packet content error! Counter: %i, last counter %i", counter, last_counter);
 			}
 			LOG_INF("ESB RX: 0x%.2X-0x%.2X-0x%.2X-0x%.2X", event->buf[0], event->buf[1], event->buf[2], event->buf[3]);
 			last_counter = counter;
