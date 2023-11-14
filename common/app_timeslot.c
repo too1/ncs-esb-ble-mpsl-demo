@@ -25,6 +25,9 @@ LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 static timeslot_callback_t m_callback;
 static volatile bool m_in_timeslot = false;
 
+// Declare the RADIO IRQ handler to supress warning
+void RADIO_IRQHandler(void);
+
 // Requests and callbacks to be run serialized from an SWI interrupt
 enum mpsl_timeslot_call {
 	REQ_OPEN_SESSION,
@@ -43,7 +46,7 @@ static mpsl_timeslot_request_t timeslot_request_earliest = {
 
 static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
 
-/* Message queue for requesting MPSL API calls to non-preemptible thread */
+// Message queue for requesting MPSL API calls to non-preemptible thread
 K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 10, 4);
 
 static void schedule_request(enum mpsl_timeslot_call call)
