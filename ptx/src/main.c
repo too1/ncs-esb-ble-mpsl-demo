@@ -18,7 +18,6 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 #include <zephyr/drivers/gpio.h> 
 
 #include <dk_buttons_and_leds.h>
-#include "app_bt_lbs.h"
 #include "app_timeslot.h"
 #include "app_esb.h"
 
@@ -70,12 +69,6 @@ void main(void)
 	}
 
 	LOG_INF("ESB BLE Multiprotocol Example");
-
-	err = app_bt_init();
-	if (err) {
-		LOG_ERR("app_bt init failed (err %d)", err);
-		return;
-	}
 
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
 	if (err) {

@@ -15,7 +15,6 @@ endif()
 # NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
-  ../common/app_bt_lbs.c
   ../common/app_timeslot.c
   ../common/app_esb.c
 )
