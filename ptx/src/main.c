@@ -31,14 +31,12 @@ void on_timeslot_start_stop(timeslot_callback_type_t type)
 {
 	switch (type) {
 		case APP_TS_STARTED:
-			NRF_P0->OUTCLR = BIT(31);
-			//dk_set_led_off(TIMESLOT_LED);
+			NRF_P0->OUTSET = BIT(31);
 			//LOG_INF("start");
 			app_esb_resume();
 			break;
 		case APP_TS_STOPPED:
-			NRF_P0->OUTSET = BIT(31);
-			//dk_set_led_on(TIMESLOT_LED);
+			NRF_P0->OUTCLR = BIT(31);
 			//LOG_INF("stop");
 			app_esb_suspend();
 			break;
@@ -63,30 +61,48 @@ void on_esb_callback(app_esb_event_t *event)
 	}
 }
 
+static void boot_toggle(int dur)
+{
+	NRF_P0->OUTSET = BIT(29);
+	k_msleep(dur);
+	NRF_P0->OUTCLR = BIT(29);
+}
+
 void main(void)
 {
 	int err;
 
-	err = dk_leds_init();
-	if (err) {
-		LOG_ERR("LEDs init failed (err %d)", err);
-		return;
-	}
+	NRF_P0->DIRSET = BIT(28) | BIT(29) | BIT(30) | BIT(31) | BIT(4);
+	NRF_P0->OUTCLR = BIT(28) | BIT(29) | BIT(30) | BIT(31);
 
 	LOG_INF("ESB BLE Multiprotocol Example");
+
+	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
+	k_msleep(1000);
 
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
 	if (err) {
 		LOG_ERR("app_esb init failed (err %d)", err);
 		return;
 	}
+	/*
+	NRF_GPIOTE->CONFIG[0] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
+						GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
+						GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos |
+						4 << GPIOTE_CONFIG_PSEL_Pos;
+	NRF_GPIOTE->SUBSCRIBE_SET[0] = 0 | 0x80000000;
+	NRF_GPIOTE->SUBSCRIBE_CLR[0] = 1 | 0x80000000;
+	NRF_RADIO->PUBLISH_READY = 0 | 0x80000000;
+	NRF_RADIO->PUBLISH_DISABLED = 1 | 0x80000000;
+	NRF_DPPIC->CHEN = BIT(0) | BIT(1);
+*/
+	hci_rpmsg_init();
 	
+	k_msleep(2000);
+
 	timeslot_init(on_timeslot_start_stop);
 
-	// Initialize the rpmsg application. Will run from a thread in the background
-	hci_rpmsg_run();
-
-	LOG_INF("winthappen");
+	LOG_INF("Timeslot started");
 
 	uint8_t esb_tx_buf[8] = {0};
 	int tx_counter = 0;

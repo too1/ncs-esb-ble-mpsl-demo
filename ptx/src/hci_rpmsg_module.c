@@ -27,7 +27,7 @@
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(hci_rpmsg, CONFIG_BT_LOG_LEVEL);
+LOG_MODULE_REGISTER(hci_rpmsg, LOG_LEVEL_INF);// CONFIG_BT_LOG_LEVEL);
 
 static struct ipc_ept hci_ept;
 
@@ -278,26 +278,31 @@ static void hci_rpmsg_send(struct net_buf *buf, bool is_fatal_err)
 		}
 	} while (ret < 0);
 
-	LOG_INF("Sent message of %d bytes.", ret);
+	LOG_DBG("Sent message of %d bytes.", ret);
 
 	net_buf_unref(buf);
 }
 
+/* incoming events and data from the controller */
+static K_FIFO_DEFINE(rx_queue);
+
 static void rx_thread(void *p1, void *p2, void *p3)
 {
 	/* incoming events and data from the controller */
-	static K_FIFO_DEFINE(rx_queue);
+	//static K_FIFO_DEFINE(rx_queue);
 
 	k_sem_take(&ipc_bound_sem, K_FOREVER);
 
 	/* Enable the raw interface, this will in turn open the HCI driver */
-	bt_enable_raw(&rx_queue);
+	//bt_enable_raw(&rx_queue);
 
 	while (1) {
 		struct net_buf *buf;
 
 		buf = net_buf_get(&rx_queue, K_FOREVER);
+		NRF_P0->OUTSET = BIT(30);
 		hci_rpmsg_send(buf, HCI_REGULAR_MSG);
+		NRF_P0->OUTCLR = BIT(30);
 	}
 }
 
@@ -382,7 +387,7 @@ static void hci_ept_bound(void *priv)
 
 static void hci_ept_recv(const void *data, size_t len, void *priv)
 {
-	LOG_INF("Received message of %u bytes.", len);
+	LOG_DBG("Received message of %u bytes.", len);
 	hci_rpmsg_rx((uint8_t *) data, len);
 }
 
@@ -394,14 +399,11 @@ static struct ipc_ept_cfg hci_ept_cfg = {
 	},
 };
 
-int hci_rpmsg_run(void)
+int hci_rpmsg_init(void)
 {
 	int err;
 	const struct device *hci_ipc_instance =
 		DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_hci_rpmsg_ipc));
-
-	/* incoming events and data from the controller */
-	static K_FIFO_DEFINE(rx_queue);
 
 	LOG_DBG("Start");
 
@@ -418,10 +420,10 @@ int hci_rpmsg_run(void)
 
 	/* Spawn the RX thread 
 	 */
-	/*k_thread_create(&rx_thread_data, rx_thread_stack,
+	k_thread_create(&rx_thread_data, rx_thread_stack,
 			K_THREAD_STACK_SIZEOF(rx_thread_stack), rx_thread,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
-	k_thread_name_set(&rx_thread_data, "HCI rpmsg RX");*/
+	k_thread_name_set(&rx_thread_data, "HCI rpmsg RX");
 
 	/* Initialize IPC service instance and register endpoint. */
 	err = ipc_service_open_instance(hci_ipc_instance);
@@ -433,7 +435,10 @@ int hci_rpmsg_run(void)
 	if (err) {
 		LOG_ERR("Registering endpoint failed with %d", err);
 	}
+}
 
+int hci_rpmsg_run(void)
+{
 	k_sem_take(&ipc_bound_sem, K_FOREVER);
 		
 	while (1) {

@@ -216,7 +216,7 @@ void app_esb_safe_period_start_stop(bool started)
 int app_esb_suspend(void)
 {
 	m_active = false;
-	
+	NRF_P0->OUTSET = BIT(29);
 	if(m_mode == APP_ESB_MODE_PTX) {
 		uint32_t irq_key = irq_lock();
 
@@ -241,6 +241,7 @@ int app_esb_suspend(void)
 	else {
 		esb_stop_rx();
 	}
+	NRF_P0->OUTCLR = BIT(29);
 
 	// Todo: Figure out how to use the esb_suspend() function rather than having to disable at the end of every timeslot
 	//esb_suspend();
@@ -249,16 +250,19 @@ int app_esb_suspend(void)
 
 int app_esb_resume(void)
 {
+	NRF_P0->OUTSET = BIT(29);
 	if(m_mode == APP_ESB_MODE_PTX) {
 		int err = esb_initialize(m_mode);
 		m_active = true;
 		m_in_safe_period = true;
+		NRF_P0->OUTCLR = BIT(29);
 		pull_packet_from_tx_msgq();
 		return err;
 	}
 	else {
 		int err = esb_initialize(m_mode);
 		m_active = true;
+		NRF_P0->OUTCLR = BIT(29);
 		return err;
 	}
 }
