@@ -79,6 +79,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 {
 	(void) session_id; // unused parameter
 	static bool timeslot_extension_failed;
+	NRF_P0->OUTCLR = BIT(28);
 	mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
 	switch (signal_type) {
 		case MPSL_TIMESLOT_SIGNAL_START:
@@ -218,7 +219,7 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			k_oops();
 			break;
 	}
-	
+	NRF_P0->OUTSET = BIT(28);
 	return p_ret_val;
 }
 
@@ -235,6 +236,7 @@ static void mpsl_nonpreemptible_thread(void)
 
 	while (1) {
 		if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) == 0) {
+			NRF_P0->OUTCLR = BIT(29);
 			switch (api_call) {
 				case REQ_OPEN_SESSION:
 					err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
@@ -262,6 +264,7 @@ static void mpsl_nonpreemptible_thread(void)
 					k_oops();
 					break;
 			}
+			NRF_P0->OUTSET = BIT(29);
 		}
 	}
 }

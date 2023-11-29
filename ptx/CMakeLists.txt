@@ -15,8 +15,9 @@ endif()
 # NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
+  src/hci_rpmsg_module.c
   ../common/app_timeslot.c
   ../common/app_esb.c
 )
 # NORDIC SDK APP END
-zephyr_library_include_directories(../common)
+zephyr_library_include_directories(../common src)

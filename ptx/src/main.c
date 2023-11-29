@@ -18,6 +18,7 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 #include <zephyr/drivers/gpio.h> 
 
 #include <dk_buttons_and_leds.h>
+#include "hci_rpmsg_module.h"
 #include "app_timeslot.h"
 #include "app_esb.h"
 
@@ -30,11 +31,15 @@ void on_timeslot_start_stop(timeslot_callback_type_t type)
 {
 	switch (type) {
 		case APP_TS_STARTED:
-			dk_set_led_off(TIMESLOT_LED);
+			NRF_P0->OUTCLR = BIT(31);
+			//dk_set_led_off(TIMESLOT_LED);
+			//LOG_INF("start");
 			app_esb_resume();
 			break;
 		case APP_TS_STOPPED:
-			dk_set_led_on(TIMESLOT_LED);
+			NRF_P0->OUTSET = BIT(31);
+			//dk_set_led_on(TIMESLOT_LED);
+			//LOG_INF("stop");
 			app_esb_suspend();
 			break;
 	}
@@ -78,8 +83,14 @@ void main(void)
 	
 	timeslot_init(on_timeslot_start_stop);
 
+	// Initialize the rpmsg application. Will run from a thread in the background
+	hci_rpmsg_run();
+
+	LOG_INF("winthappen");
+
 	uint8_t esb_tx_buf[8] = {0};
 	int tx_counter = 0;
+
 	while (1) {
 		memcpy(esb_tx_buf, (uint8_t*)&tx_counter, 4);
 		err = app_esb_send(esb_tx_buf, 8);
