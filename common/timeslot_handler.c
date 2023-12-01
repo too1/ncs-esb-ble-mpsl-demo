@@ -1,5 +1,5 @@
 #include <zephyr/kernel.h>
-#include "app_timeslot.h"
+#include "timeslot_handler.h"
 #include <zephyr/irq.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <hal/nrf_timer.h>
@@ -274,7 +274,7 @@ static void mpsl_nonpreemptible_thread(void)
 	}
 }
 
-void timeslot_init(timeslot_callback_t callback)
+void timeslot_handler_init(timeslot_callback_t callback)
 {
 	m_callback = callback;
 

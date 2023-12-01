@@ -1,5 +1,5 @@
 #include "app_esb.h"
-#include "app_timeslot.h"
+#include "timeslot_handler.h"
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/clock_control/nrf_clock_control.h>
 #include <esb.h>
@@ -182,12 +182,15 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 	m_callback = callback;
 	m_mode = mode;
 	
+	NRF_P0->DIRSET = BIT(28) | BIT(29) | BIT(30) | BIT(31) | BIT(4);
+	NRF_P0->OUTCLR = BIT(28) | BIT(29) | BIT(30) | BIT(31);
+
 	ret = clocks_start();
 	if (ret < 0) {
 		return ret;
 	}
 
-	timeslot_init(on_timeslot_start_stop);
+	timeslot_handler_init(on_timeslot_start_stop);
 
 	return 0;
 }

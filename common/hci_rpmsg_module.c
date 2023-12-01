@@ -435,6 +435,8 @@ int hci_rpmsg_init(void)
 	if (err) {
 		LOG_ERR("Registering endpoint failed with %d", err);
 	}
+
+	return 0;
 }
 
 int hci_rpmsg_run(void)

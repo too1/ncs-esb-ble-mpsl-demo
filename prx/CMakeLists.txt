@@ -15,8 +15,9 @@ endif()
 # NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
-  ../common/app_bt_lbs.c
-  ../common/app_timeslot.c
+  ../common/hci_rpmsg_module.c
+#  ../common/app_bt_lbs.c
+  ../common/timeslot_handler.c
   ../common/app_esb.c
 )
 # NORDIC SDK APP END

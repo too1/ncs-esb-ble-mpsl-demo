@@ -45,9 +45,6 @@ int main(void)
 {
 	int err;
 
-	NRF_P0->DIRSET = BIT(28) | BIT(29) | BIT(30) | BIT(31) | BIT(4);
-	NRF_P0->OUTCLR = BIT(28) | BIT(29) | BIT(30) | BIT(31);
-
 	LOG_INF("ESB BLE Multiprotocol Example");
 
 	// Initialize the hci_rpmsg module, which handles the interface between the Bluetooth host and the controller
