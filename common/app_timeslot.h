@@ -6,6 +6,4 @@ typedef void (*timeslot_callback_t)(timeslot_callback_type_t type);
 
 void timeslot_init(timeslot_callback_t callback);
 
-void timeslot_req(void);
-
 #endif

@@ -13,14 +13,13 @@ LOG_MODULE_REGISTER(timeslot, LOG_LEVEL_INF);
 
 #define TIMESLOT_REQUEST_TIMEOUT_US  1000000
 #define TIMESLOT_LENGTH_US           10000
-#define TIMESLOT_EXT_MARGIN_MARGIN	 2000
-#define TIMESLOT_REQ_EARLIEST_MARGIN 300
+#define TIMESLOT_EXT_MARGIN_MARGIN	 1000
+#define TIMESLOT_REQ_EARLIEST_MARGIN 100
 #define TIMER_EXPIRY_US_EARLY 		 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_MARGIN)
 #define TIMER_EXPIRY_REQ			 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_REQ_EARLIEST_MARGIN)
 
 #define MPSL_THREAD_PRIO             CONFIG_MPSL_THREAD_COOP_PRIO
 #define STACKSIZE                    CONFIG_MAIN_STACK_SIZE
-//#define THREAD_PRIORITY              K_LOWEST_APPLICATION_THREAD_PRIO
 
 static timeslot_callback_t m_callback;
 static volatile bool m_in_timeslot = false;
@@ -42,15 +41,6 @@ static mpsl_timeslot_request_t timeslot_request_earliest = {
 	.params.earliest.priority = MPSL_TIMESLOT_PRIORITY_NORMAL,
 	.params.earliest.length_us = TIMESLOT_LENGTH_US,
 	.params.earliest.timeout_us = TIMESLOT_REQUEST_TIMEOUT_US
-};
-
-// Timeslot request future
-static mpsl_timeslot_request_t timeslot_request_soon = {
-	.request_type = MPSL_TIMESLOT_REQ_TYPE_NORMAL,
-	.params.normal.hfclk = MPSL_TIMESLOT_HFCLK_CFG_NO_GUARANTEE,
-	.params.normal.priority = MPSL_TIMESLOT_PRIORITY_NORMAL,
-	.params.normal.distance_us = 300000,
-	.params.normal.length_us = TIMESLOT_LENGTH_US,
 };
 
 static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
@@ -119,7 +109,6 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			if(nrf_timer_event_check(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE0)) {
 				nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK);
 				nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE0);
-				LOG_DBG("T0");
 
 				signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_EXTEND;
 				signal_callback_return_param.params.extend.length_us = TIMESLOT_LENGTH_US;	
@@ -127,11 +116,10 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 			else if(nrf_timer_event_check(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE1)) {
 				nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE1_MASK);
 				nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE1);
-				LOG_DBG("T1");
 
 				if(timeslot_extension_failed) {
 					signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_REQUEST;
-					signal_callback_return_param.params.request.p_next = &timeslot_request_soon;// timeslot_request_earliest;
+					signal_callback_return_param.params.request.p_next = &timeslot_request_earliest;
 				} else {
 					signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 				}
@@ -293,11 +281,6 @@ void timeslot_init(timeslot_callback_t callback)
 	schedule_request(REQ_OPEN_SESSION);
 
 	schedule_request(REQ_MAKE_REQUEST);
-}
-
-void timeslot_req(void)
-{
-schedule_request(REQ_MAKE_REQUEST);
 }
 
 K_THREAD_DEFINE(mpsl_nonpreemptible_thread_id, STACKSIZE,
