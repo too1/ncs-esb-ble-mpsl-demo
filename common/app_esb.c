@@ -1,4 +1,5 @@
 #include "app_esb.h"
+#include "app_timeslot.h"
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/clock_control/nrf_clock_control.h>
 #include <esb.h>
@@ -17,9 +18,10 @@ static struct esb_payload rx_payload;
 
 static app_esb_mode_t m_mode;
 static bool m_active = false;
-static bool m_in_safe_period = false;
 
 static int pull_packet_from_tx_msgq(void);
+
+static void on_timeslot_start_stop(timeslot_callback_type_t type);
 
 static void event_handler(struct esb_evt const *event)
 {
@@ -37,7 +39,7 @@ static void event_handler(struct esb_evt const *event)
 			m_callback(&m_event);
 
 			// Check if there are more messages in the queue
-			if(m_in_safe_period && pull_packet_from_tx_msgq() == 0){
+			if(pull_packet_from_tx_msgq() == 0){
 				LOG_DBG("PCK loaded in ESB TX callback");
 			}
 			break;
@@ -54,7 +56,7 @@ static void event_handler(struct esb_evt const *event)
 			esb_flush_tx();
 
 			// Check if there are more messages in the queue
-			if(m_in_safe_period && pull_packet_from_tx_msgq() == 0){
+			if(pull_packet_from_tx_msgq() == 0){
 				LOG_DBG("PCK loaded in ESB fail callback");
 			}
 			break;
@@ -185,6 +187,8 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 		return ret;
 	}
 
+	timeslot_init(on_timeslot_start_stop);
+
 	return 0;
 }
 
@@ -198,7 +202,7 @@ int app_esb_send(uint8_t *buf, uint32_t length)
 	tx_payload.length = length;
 	ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 	if (ret == 0) {
-		if (m_active && m_in_safe_period) {
+		if (m_active) {
 			pull_packet_from_tx_msgq();
 		}
 	}
@@ -208,12 +212,7 @@ int app_esb_send(uint8_t *buf, uint32_t length)
 	return 0;
 }
 
-void app_esb_safe_period_start_stop(bool started)
-{
-	m_in_safe_period = started;
-}
-
-int app_esb_suspend(void)
+static int app_esb_suspend(void)
 {
 	m_active = false;
 	NRF_P0->OUTSET = BIT(29);
@@ -248,13 +247,12 @@ int app_esb_suspend(void)
 	return 0;
 }
 
-int app_esb_resume(void)
+static int app_esb_resume(void)
 {
 	NRF_P0->OUTSET = BIT(29);
 	if(m_mode == APP_ESB_MODE_PTX) {
 		int err = esb_initialize(m_mode);
 		m_active = true;
-		m_in_safe_period = true;
 		NRF_P0->OUTCLR = BIT(29);
 		pull_packet_from_tx_msgq();
 		return err;
@@ -264,5 +262,20 @@ int app_esb_resume(void)
 		m_active = true;
 		NRF_P0->OUTCLR = BIT(29);
 		return err;
+	}
+}
+
+/* Callback function signalling that a timeslot is started or stopped */
+static void on_timeslot_start_stop(timeslot_callback_type_t type)
+{
+	switch (type) {
+		case APP_TS_STARTED:
+			NRF_P0->OUTSET = BIT(31);
+			app_esb_resume();
+			break;
+		case APP_TS_STOPPED:
+			NRF_P0->OUTCLR = BIT(31);
+			app_esb_suspend();
+			break;
 	}
 }

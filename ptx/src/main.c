@@ -19,27 +19,9 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 
 #include <dk_buttons_and_leds.h>
 #include "hci_rpmsg_module.h"
-#include "app_timeslot.h"
 #include "app_esb.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
-
-#define TIMESLOT_LED DK_LED4
-
-/* Callback function signalling that a timeslot is started or stopped */
-void on_timeslot_start_stop(timeslot_callback_type_t type)
-{
-	switch (type) {
-		case APP_TS_STARTED:
-			NRF_P0->OUTSET = BIT(31);
-			app_esb_resume();
-			break;
-		case APP_TS_STOPPED:
-			NRF_P0->OUTCLR = BIT(31);
-			app_esb_suspend();
-			break;
-	}
-}
 
 void on_esb_callback(app_esb_event_t *event)
 {
@@ -68,21 +50,19 @@ int main(void)
 
 	LOG_INF("ESB BLE Multiprotocol Example");
 
-	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
-	if (err) {
-		LOG_ERR("app_esb init failed (err %d)", err);
-		return err;
-	}
-
 	// Initialize the hci_rpmsg module, which handles the interface between the Bluetooth host and the controller
 	hci_rpmsg_init();
 
 	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
 	k_msleep(5000);
 
-	timeslot_init(on_timeslot_start_stop);
-
-	LOG_INF("Timeslot started");
+	// Initialize the app_esb module, which handles timeslot and ESB configuration
+	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
+	if (err) {
+		LOG_ERR("app_esb init failed (err %d)", err);
+		return err;
+	}
+	LOG_INF("ESB in timeslot started");
 
 	uint8_t esb_tx_buf[8] = {0};
 	int tx_counter = 0;

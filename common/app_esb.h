@@ -19,10 +19,4 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback);
 
 int app_esb_send(uint8_t *buf, uint32_t length);
 
-int app_esb_suspend(void);
-
-int app_esb_resume(void);
-
-void app_esb_safe_period_start_stop(bool started);
-
 #endif
