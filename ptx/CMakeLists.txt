@@ -12,12 +12,15 @@ if (CONFIG_SOC_NRF5340_CPUAPP)
   message(FATAL_ERROR "This sample is not supported on the nRF53 application core")
 endif()
 
-# NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
-  ../common/hci_rpmsg_module.c
   ../common/timeslot_handler.c
   ../common/app_esb.c
 )
-# NORDIC SDK APP END
+
+if (CONFIG_SOC_NRF5340_CPUNET)
+  target_sources(app PRIVATE ../common/53_net/hci_rpmsg_module.c)
+  zephyr_library_include_directories(../common/53_net)
+endif()
+
 zephyr_library_include_directories(../common)
