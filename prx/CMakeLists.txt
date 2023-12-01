@@ -14,7 +14,6 @@ endif()
 
 target_sources(app PRIVATE
   src/main.c
-#  ../common/app_bt_lbs.c
   ../common/timeslot_handler.c
   ../common/app_esb.c
 )
@@ -22,6 +21,10 @@ target_sources(app PRIVATE
 if (CONFIG_SOC_NRF5340_CPUNET)
   target_sources(app PRIVATE ../common/53_net/hci_rpmsg_module.c)
   zephyr_library_include_directories(../common/53_net)
+elseif(CONFIG_SOC_NRF5340_CPUAPP)
+else()
+  # If we build for neither 5340 appcore or netcore, assume a 52 series board is selected
+  target_sources(app PRIVATE ../common/app_bt_lbs.c)
 endif()
 
 zephyr_library_include_directories(../common)

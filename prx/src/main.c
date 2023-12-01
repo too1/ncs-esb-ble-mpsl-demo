@@ -17,7 +17,10 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 
 #include <zephyr/drivers/gpio.h> 
 
+#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 #include "hci_rpmsg_module.h"
+#endif
+
 #include "app_esb.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -53,17 +56,21 @@ int main(void)
 
 	LOG_INF("ESB PRX BLE Multiprotocol Example");
 
-	/*err = app_bt_init();
+#ifndef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
+	err = app_bt_init();
 	if (err) {
 		LOG_ERR("app_bt init failed (err %d)", err);
 		return;
-	}*/
+	}
+#endif
 
+#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 	// Initialize the hci_rpmsg module, which handles the interface between the Bluetooth host and the controller
 	hci_rpmsg_init();
 
 	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
 	k_msleep(5000);
+#endif
 
 	err = app_esb_init(APP_ESB_MODE_PRX, on_esb_callback);
 	if (err) {

@@ -18,7 +18,11 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 #include <zephyr/drivers/gpio.h> 
 
 #include <dk_buttons_and_leds.h>
+
+#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 #include "hci_rpmsg_module.h"
+#endif
+
 #include "app_esb.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -47,11 +51,13 @@ int main(void)
 
 	LOG_INF("ESB BLE Multiprotocol Example");
 
+#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 	// Initialize the hci_rpmsg module, which handles the interface between the Bluetooth host and the controller
 	hci_rpmsg_init();
 
 	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
 	k_msleep(5000);
+#endif
 
 	// Initialize the app_esb module, which handles timeslot and ESB configuration
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
