@@ -71,6 +71,7 @@ int main(void)
 	int tx_counter = 0;
 
 	while (1) {
+#ifndef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 		memcpy(esb_tx_buf, (uint8_t*)&tx_counter, 4);
 		err = app_esb_send(esb_tx_buf, 8);
 		if (err < 0) {
@@ -80,6 +81,7 @@ int main(void)
 			LOG_INF("ESB TX upload %.2x-%.2x", (tx_counter& 0xFF), ((tx_counter >> 8) & 0xFF));
 			tx_counter++;
 		}
+#endif
 		k_sleep(K_MSEC(100));
 	}
 }

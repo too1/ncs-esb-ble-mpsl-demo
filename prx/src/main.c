@@ -19,6 +19,8 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 
 #ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
 #include "hci_rpmsg_module.h"
+#else
+#include "app_bt_lbs.h"
 #endif
 
 #include "app_esb.h"
@@ -60,7 +62,7 @@ int main(void)
 	err = app_bt_init();
 	if (err) {
 		LOG_ERR("app_bt init failed (err %d)", err);
-		return;
+		return err;
 	}
 #endif
 
