@@ -37,20 +37,56 @@ NRF_RPC_GROUP_DEFINE(esb_group, "esb_group_id", &esb_group_tr, NULL, NULL, NULL)
  */
 static app_esb_data_t esb_rx_payload;
 
+static void local_rx_cb(uint32_t evt_type, app_esb_data_t *p_rx_payload);
+
+static void work_send_callback_func(struct k_work *item);
+
+K_WORK_DEFINE(m_work_send_callback, work_send_callback_func);
+
+void on_esb_callback(app_esb_event_t *event)
+{
+	switch(event->evt_type) {
+		case APP_ESB_EVT_TX_SUCCESS:
+			LOG_INF("ESB TX success");
+			break;
+		case APP_ESB_EVT_TX_FAIL:
+			LOG_INF("ESB TX failed");
+			break;
+		case APP_ESB_EVT_RX:
+			LOG_INF("ESB RX: 0x%.2x-0x%.2x-0x%.2x-0x%.2x", event->buf[0], event->buf[1], event->buf[2], event->buf[3]);
+			break;
+		default:
+			LOG_ERR("Unknown APP ESB event!");
+			break;
+	}
+	k_work_submit(&m_work_send_callback);
+}
+
+static void work_send_callback_func(struct k_work *item)
+{
+	local_rx_cb(3, 0);
+}
 
 int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
 {
-    LOG_DBG("esb_simple_init. Mode %i", p_config->mode);
+    LOG_DBG("app_esb_init. Mode %i", p_config->mode);
+	int err = app_esb_init(p_config->mode, on_esb_callback);
+	if (err) {
+		LOG_ERR("app_esb init failed (err %d)", err);
+		return err;
+	}
     return 0;
 }
 
-int esb_simple_rx(app_esb_data_t *p_rx_payload)
+int esb_simple_tx(app_esb_data_t *p_rx_payload)
 {
 	LOG_DBG("RX cmd: %i", p_rx_payload->data[0]);
-
-	return 0;
+	int err = app_esb_send(p_rx_payload);
+	if (err < 0) {
+		LOG_ERR("app_esb_send: error %i");
+	}
+	return err;
 }
-
 
 static int decode_struct(struct nrf_rpc_cbor_ctx *ctx, void *struct_ptr, size_t expected_size)
 {
@@ -164,29 +200,26 @@ static void esb_simple_rx_handler(const struct nrf_rpc_group *group,
 				  struct nrf_rpc_cbor_ctx *ctx,
 				  void *handler_data)
 {
-	int err;
+	int err = 0;
 	uint32_t p_rx_payload;
+	app_esb_data_t tx_payload;
 
 	LOG_DBG("");
 
-	if (zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
-		err = 0;
-	} else {
+	if (decode_struct(ctx, &tx_payload, sizeof(tx_payload))) {
+		LOG_DBG("decoding app_esb_data_t struct failed");
 		err = -EBADMSG;
-		p_rx_payload = 0;
 	}
 
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 
 	if (!err) {
-		err = esb_simple_rx(&p_rx_payload);
+		LOG_INF("Sending packet? data 0 %i, len %i", tx_payload.data[0], tx_payload.len);
+		err = esb_simple_tx(&tx_payload);
 	}
-
-	simple_rx_rsp(p_rx_payload, err);
+	static int counter = 0;
+	simple_rx_rsp(counter++, err);
 }
-
-/* Holds the address to the remote-side callback */
-static app_esb_callback_t p_rx_cb_remote = NULL;
 
 /* Holds the address of the remote-side payload struct */
 /* Only needed for the ASYNC API. */
@@ -198,50 +231,34 @@ static app_esb_data_t *p_rx_payload_remote = NULL;
  * On the remote (app core), the rpc event will then call
  * the function stored in p_rx_cb_remote.
  */
-static void local_rx_cb(app_esb_data_t *p_rx_payload)
+static void local_rx_cb(uint32_t evt_type, app_esb_data_t *p_rx_payload)
 {
-	int err;
+	int err = 0;
 	struct nrf_rpc_cbor_ctx ctx;
+
+	uint32_t p_esb_rx_payload = (uint32_t)&esb_rx_payload;
 
 	NRF_RPC_CBOR_ALLOC(&esb_group, ctx,
 			   CBOR_BUF_SIZE +
 			   sizeof(err) +
-			   sizeof(p_rx_cb_remote) +
-			   sizeof(p_rx_payload_remote) +
-			   sizeof(esb_rx_payload));
-
-	/* Don't push NULL pointers to the other side */
-	if (p_rx_payload_remote && p_rx_cb_remote) {
-		err = 0;
-	} else {
-		err = -EFAULT;
-	}
+			   sizeof(evt_type) +
+			   sizeof(p_esb_rx_payload));
 
 	/* Always encode the error */
 	if (!zcbor_int32_put(ctx.zs, err)) {
 		err = -EINVAL;
 	}
 
-	if (err || !zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_cb_remote)) {
+	if (err || !zcbor_uint32_put(ctx.zs, evt_type)) {
 		err = -EINVAL;
 	}
 
-	if (err || !zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_payload_remote)) {
+	if (err || !zcbor_uint32_put(ctx.zs, p_rx_payload)) {
 		err = -EINVAL;
 	}
 
 	if (!err) {
-		if (!zcbor_bstr_encode_ptr(ctx.zs,
-					  (const uint8_t *)&esb_rx_payload,
-					  sizeof(esb_rx_payload))) {
-			err = -EINVAL;
-		}
-	}
-
-	if (!err) {
-		err = nrf_rpc_cbor_evt(&esb_group,
-				       RPC_EVENT_RX_CB,
-				       &ctx);
+		err = nrf_rpc_cbor_evt(&esb_group, RPC_EVENT_RX_CB, &ctx);
 	}
 
 	if (!err) {
@@ -277,14 +294,3 @@ static int serialization_init(void)
 }
 
 SYS_INIT(serialization_init, POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY);
-
-
-int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
-{
-    return 0;
-}
-
-int app_esb_send(uint8_t *buf, uint32_t length)
-{
-    return 0;
-}

@@ -21,7 +21,7 @@
 
 #define CBOR_BUF_SIZE 16
 
-LOG_MODULE_REGISTER(rpc_app, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(rpc_app, LOG_LEVEL_DBG);
 
 /* This defines a transport for our RPC command group.
  * Here we use the IPC transport (nrf_rpc_ipc.h):
@@ -74,6 +74,7 @@ static void rsp_handler(const struct nrf_rpc_group *group,
 			struct nrf_rpc_cbor_ctx *ctx,
 			void *handler_data)
 {
+	LOG_INF("rsp_handler addr ctx %x", (uint32_t)ctx);
 	decode_error(group, ctx, handler_data);
 
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
@@ -123,6 +124,44 @@ int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
 	}
 }
 
+int esb_simple_tx(app_esb_data_t *packet)
+{
+	int32_t err;
+	int err_rpc;
+	struct nrf_rpc_cbor_ctx ctx;
+	size_t packet_len = sizeof(app_esb_data_t);
+
+	NRF_RPC_CBOR_ALLOC(&esb_group, ctx, CBOR_BUF_SIZE + packet_len);
+
+	/* Serialize the `config` struct to a byte array, encode it and place it
+	 * in the CBOR buffer.
+	 *
+	 * We play fast and loose with the memory layout because we assume that
+	 * the other core's FW was compiled with the exact same toolchain and
+	 * compiler options, resulting in the same memory layout on the other
+	 * side.
+	 *
+	 * Note: a gotcha is that the `zcbor_` APIs return `true` on success,
+	 * whereas almost all zephyr (and other NCS) APIs return a `0` on success.
+	 */
+	if (!zcbor_bstr_encode_ptr(ctx.zs, (const uint8_t *)packet, packet_len)) {
+		return -EINVAL;
+	}
+
+	LOG_DBG("send cmd %p 0x%x %p %p %p", &esb_group, RPC_COMMAND_TX, &ctx, rsp_handler, &err);
+
+	err_rpc = nrf_rpc_cbor_cmd(&esb_group, RPC_COMMAND_TX, &ctx, rsp_handler, &err);
+
+	/* Return a fixed error code if the RPC transport had an error. Else,
+	 * return the result of the API called on the other core.
+	 */
+	if (err_rpc) {
+		return -EINVAL;
+	} else {
+		return err;
+	}
+}
+
 static void simple_rx_rsp_handler(const struct nrf_rpc_group *group,
 				  struct nrf_rpc_cbor_ctx *ctx,
 				  void *handler_data)
@@ -131,7 +170,7 @@ static void simple_rx_rsp_handler(const struct nrf_rpc_group *group,
 	uint32_t p_rx_payload;
 	struct zcbor_string zst;
 
-	LOG_DBG("");
+	LOG_INF("simple_rx_rsp_handler");
 
 	/* Try pulling the error code. */
 	err = decode_error(group, ctx, handler_data);
@@ -139,7 +178,7 @@ static void simple_rx_rsp_handler(const struct nrf_rpc_group *group,
 	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
 		err = -EBADMSG;
 	}
-
+	
 	/* Don't write data to the null pointer. */
 	if (!p_rx_payload) {
 		err = -EFAULT;
@@ -171,7 +210,7 @@ static void simple_rx_rsp_handler(const struct nrf_rpc_group *group,
  */
 static int rpc_radio_cmd(enum rpc_command cmd,
 			 app_esb_data_t *p_rx_payload,
-			 app_esb_callback_t *p_rx_cb)
+			 app_esb_callback_t p_rx_cb)
 {
 	int32_t err;
 	int err_rpc;
@@ -221,11 +260,9 @@ static int rpc_radio_cmd(enum rpc_command cmd,
 	}
 }
 
-int esb_simple_rx(app_esb_data_t *p_rx_payload)
+void app_esb_callback(app_esb_event_t *event)
 {
-	LOG_DBG("");
-
-	return rpc_radio_cmd(RPC_COMMAND_TX, p_rx_payload, NULL);
+	LOG_INF("JADAD");
 }
 
 static void rx_cb_handler(const struct nrf_rpc_group *group,
@@ -234,48 +271,68 @@ static void rx_cb_handler(const struct nrf_rpc_group *group,
 {
 	int err;
 	uint32_t p_rx_payload;
-	uint32_t p_rx_cb;
+	//uint32_t p_rx_cb;
 	struct zcbor_string zst;
+	static app_esb_data_t rx_data;
 
-	LOG_DBG("");
+	LOG_DBG("CBHANDLER");
 
 	/* Try pulling the error code. */
 	err = decode_error(group, ctx, handler_data);
 
-	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_cb)) {
+	/*if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_cb)) {
 		err = -EBADMSG;
-	}
+	}*/
 
 	/* If the callback pointer is not valid, decoding the payload is
 	 * pointless, as the application cannot be notified of the new data.
 	 */
-	if (!p_rx_cb) {
+	/*if (!p_rx_cb) {
 		err = -EFAULT;
-	}
+	}*/
 
 	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
 		err = -EBADMSG;
 	}
-
+	LOG_INF("p_rx_payload %x", p_rx_payload);
 	/* Don't write data to the null pointer. */
 	if (!p_rx_payload) {
 		err = -EFAULT;
 	}
-
+#if 1
 	if (err || !zcbor_bstr_decode(ctx->zs, &zst)) {
 		err = -EBADMSG;
 	}
 
-	if (zst.len != sizeof(app_esb_event_t)) {
+	if (zst.len != sizeof(app_esb_data_t)) {
 		LOG_ERR("struct size mismatch: expect %d got %d",
-			sizeof(app_esb_event_t),
+			sizeof(app_esb_data_t),
 			zst.len);
 		err = -EMSGSIZE;
 	}
 
 	if (!err) {
-		memcpy((app_esb_event_t *)p_rx_payload, zst.value, zst.len);
+		memcpy(&rx_data, zst.value, zst.len);
 	}
+#else
+	if (zcbor_bstr_decode(ctx->zs, &zst)) {
+		err = 0;
+	} else {
+		err = -EBADMSG;
+	}
+
+	if (expected_size != zst.len) {
+		LOG_ERR("struct size mismatch: expect %d got %d", expected_size, zst.len);
+		err = -EMSGSIZE;
+	}
+
+	if (!err) {
+		memcpy(struct_ptr, zst.value, zst.len);
+	} else {
+		LOG_ERR("decoding failed");
+	}
+#endif
+
 
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 
@@ -331,14 +388,14 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
     if (err < 0) {
         return err;
     }
-
     return 0;
 }
 
-int app_esb_send(uint8_t *buf, uint32_t length)
+int app_esb_send(app_esb_data_t *tx_packet)
 {
-    static app_esb_data_t dummy_payload;
-    memcpy(dummy_payload.data, buf, length);
-    esb_simple_rx(&dummy_payload);
+	//static app_esb_data_t local_packet[4];
+	//local_packet[0].data[1] = 12;
+	//memcpy(&local_packet[0], tx_packet, sizeof(tx_packet));
+    esb_simple_tx(tx_packet);
     return 0;
 }

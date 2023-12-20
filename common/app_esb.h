@@ -31,6 +31,6 @@ struct esb_simple_addr {
 
 int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback);
 
-int app_esb_send(uint8_t *buf, uint32_t length);
+int app_esb_send(app_esb_data_t *tx_packet);
 
 #endif

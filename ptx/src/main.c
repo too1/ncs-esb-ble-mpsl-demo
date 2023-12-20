@@ -19,10 +19,6 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 
 #include <dk_buttons_and_leds.h>
 
-#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
-#include "hci_rpmsg_module.h"
-#endif
-
 #include "app_esb.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -51,29 +47,19 @@ int main(void)
 
 	LOG_INF("ESB BLE Multiprotocol Example");
 
-#ifdef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
-	// Initialize the hci_rpmsg module, which handles the interface between the Bluetooth host and the controller
-	hci_rpmsg_init();
-
-	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
-	k_msleep(5000);
-#endif
-
 	// Initialize the app_esb module, which handles timeslot and ESB configuration
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
 	if (err) {
 		LOG_ERR("app_esb init failed (err %d)", err);
 		return err;
 	}
-	LOG_INF("ESB in timeslot started");
-
-	uint8_t esb_tx_buf[8] = {0};
+	static app_esb_data_t my_data;
+	my_data.len = 8;
 	int tx_counter = 0;
-
 	while (1) {
-#ifndef CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET
-		memcpy(esb_tx_buf, (uint8_t*)&tx_counter, 4);
-		err = app_esb_send(esb_tx_buf, 8);
+		//LOG_INF("alive");
+		memcpy(my_data.data, (uint8_t*)&tx_counter, 4);
+		err = app_esb_send(&my_data);
 		if (err < 0) {
 			LOG_INF("ESB TX upload failed (err %i)", err);
 		}
@@ -81,7 +67,7 @@ int main(void)
 			LOG_INF("ESB TX upload %.2x-%.2x", (tx_counter& 0xFF), ((tx_counter >> 8) & 0xFF));
 			tx_counter++;
 		}
-#endif
-		k_sleep(K_MSEC(100));
+		k_sleep(K_MSEC(4000));
 	}
+	return 0;
 }

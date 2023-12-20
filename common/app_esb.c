@@ -189,20 +189,21 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 	if (ret < 0) {
 		return ret;
 	}
-
+	
+	LOG_INF("Timeslothandler init");
 	timeslot_handler_init(on_timeslot_start_stop);
 
 	return 0;
 }
 
-int app_esb_send(uint8_t *buf, uint32_t length)
+int app_esb_send(app_esb_data_t *tx_packet)
 {
 	int ret = 0;
 	static struct esb_payload tx_payload;
 	tx_payload.pipe = 0;
 	tx_payload.noack = false;
-	memcpy(tx_payload.data, buf, length);
-	tx_payload.length = length;
+	memcpy(tx_payload.data, tx_packet->data, tx_packet->len);
+	tx_payload.length = tx_packet->len;
 	ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 	if (ret == 0) {
 		if (m_active) {
