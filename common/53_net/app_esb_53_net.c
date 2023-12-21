@@ -39,32 +39,48 @@ static app_esb_data_t esb_rx_payload;
 
 static void local_rx_cb(uint32_t evt_type, app_esb_data_t *p_rx_payload);
 
-static void work_send_callback_func(struct k_work *item);
+static void work_send_evt_tx_success_func(struct k_work *item);
+static void work_send_evt_tx_fail_func(struct k_work *item);
+static void work_send_evt_rx_received_func(struct k_work *item);
 
-K_WORK_DEFINE(m_work_send_callback, work_send_callback_func);
+K_WORK_DEFINE(m_work_send_evt_tx_success, work_send_evt_tx_success_func);
+K_WORK_DEFINE(m_work_send_evt_tx_fail, work_send_evt_tx_fail_func);
+K_WORK_DEFINE(m_work_send_evt_rx_received, work_send_evt_rx_received_func);
 
 void on_esb_callback(app_esb_event_t *event)
 {
 	switch(event->evt_type) {
 		case APP_ESB_EVT_TX_SUCCESS:
 			LOG_INF("ESB TX success");
+			k_work_submit(&m_work_send_evt_tx_success);
 			break;
 		case APP_ESB_EVT_TX_FAIL:
 			LOG_INF("ESB TX failed");
+			k_work_submit(&m_work_send_evt_tx_fail);
 			break;
 		case APP_ESB_EVT_RX:
 			LOG_INF("ESB RX: 0x%.2x-0x%.2x-0x%.2x-0x%.2x", event->buf[0], event->buf[1], event->buf[2], event->buf[3]);
+			k_work_submit(&m_work_send_evt_rx_received);
 			break;
 		default:
 			LOG_ERR("Unknown APP ESB event!");
 			break;
 	}
-	k_work_submit(&m_work_send_callback);
 }
 
-static void work_send_callback_func(struct k_work *item)
+static void work_send_evt_tx_success_func(struct k_work *item)
 {
-	local_rx_cb(3, 0);
+	local_rx_cb(APP_ESB_EVT_TX_SUCCESS, 0);
+}
+
+static void work_send_evt_tx_fail_func(struct k_work *item)
+{
+	local_rx_cb(APP_ESB_EVT_TX_FAIL, 0);
+}
+
+static void work_send_evt_rx_received_func(struct k_work *item)
+{
+	local_rx_cb(APP_ESB_EVT_RX, 0);
 }
 
 int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
@@ -83,7 +99,7 @@ int esb_simple_tx(app_esb_data_t *p_rx_payload)
 	LOG_DBG("RX cmd: %i", p_rx_payload->data[0]);
 	int err = app_esb_send(p_rx_payload);
 	if (err < 0) {
-		LOG_ERR("app_esb_send: error %i");
+		LOG_ERR("app_esb_send: error %i", err);
 	}
 	return err;
 }
@@ -196,12 +212,11 @@ static void simple_rx_rsp(uint32_t remote_rx_payload_ptr, int32_t err)
 	nrf_rpc_cbor_rsp_no_err(&esb_group, &ctx);
 }
 
-static void esb_simple_rx_handler(const struct nrf_rpc_group *group,
+static void esb_simple_tx_handler(const struct nrf_rpc_group *group,
 				  struct nrf_rpc_cbor_ctx *ctx,
 				  void *handler_data)
 {
 	int err = 0;
-	uint32_t p_rx_payload;
 	app_esb_data_t tx_payload;
 
 	LOG_DBG("");
@@ -220,10 +235,6 @@ static void esb_simple_rx_handler(const struct nrf_rpc_group *group,
 	static int counter = 0;
 	simple_rx_rsp(counter++, err);
 }
-
-/* Holds the address of the remote-side payload struct */
-/* Only needed for the ASYNC API. */
-static app_esb_data_t *p_rx_payload_remote = NULL;
 
 /* This is the callback passed to the esb_simple API, which
  * then calls the RPC remote callback (sends an event).
@@ -253,7 +264,7 @@ static void local_rx_cb(uint32_t evt_type, app_esb_data_t *p_rx_payload)
 		err = -EINVAL;
 	}
 
-	if (err || !zcbor_uint32_put(ctx.zs, p_rx_payload)) {
+	if (err || !zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_payload)) {
 		err = -EINVAL;
 	}
 
@@ -269,7 +280,7 @@ static void local_rx_cb(uint32_t evt_type, app_esb_data_t *p_rx_payload)
 }
 
 NRF_RPC_CBOR_CMD_DECODER(esb_group, esb_simple_init, RPC_COMMAND_INIT, esb_simple_init_handler, NULL);
-NRF_RPC_CBOR_CMD_DECODER(esb_group, esb_simple_rx,   RPC_COMMAND_TX,   esb_simple_rx_handler,   NULL);
+NRF_RPC_CBOR_CMD_DECODER(esb_group, esb_simple_tx,   RPC_COMMAND_TX,   esb_simple_tx_handler,   NULL);
 
 static void err_handler(const struct nrf_rpc_err_report *report)
 {

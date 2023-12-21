@@ -74,9 +74,8 @@ static void rsp_handler(const struct nrf_rpc_group *group,
 			struct nrf_rpc_cbor_ctx *ctx,
 			void *handler_data)
 {
-	LOG_INF("rsp_handler addr ctx %x", (uint32_t)ctx);
-	decode_error(group, ctx, handler_data);
-
+	int err = decode_error(group, ctx, handler_data);
+	LOG_INF("rsp_handler addr ctx %x, error %i", (uint32_t)ctx, err);
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 }
 
@@ -272,74 +271,40 @@ static void rx_cb_handler(const struct nrf_rpc_group *group,
 	int err;
 	uint32_t p_rx_payload;
 	//uint32_t p_rx_cb;
-	struct zcbor_string zst;
+	//struct zcbor_string zst;
 	static app_esb_data_t rx_data;
-
-	LOG_DBG("CBHANDLER");
+	int evt_type;
 
 	/* Try pulling the error code. */
 	err = decode_error(group, ctx, handler_data);
 
-	/*if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_cb)) {
+	if (err || !zcbor_uint32_decode(ctx->zs, &evt_type)) {
 		err = -EBADMSG;
-	}*/
-
-	/* If the callback pointer is not valid, decoding the payload is
-	 * pointless, as the application cannot be notified of the new data.
-	 */
-	/*if (!p_rx_cb) {
-		err = -EFAULT;
-	}*/
+	}
 
 	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
 		err = -EBADMSG;
 	}
-	LOG_INF("p_rx_payload %x", p_rx_payload);
-	/* Don't write data to the null pointer. */
-	if (!p_rx_payload) {
-		err = -EFAULT;
-	}
-#if 1
-	if (err || !zcbor_bstr_decode(ctx->zs, &zst)) {
-		err = -EBADMSG;
-	}
 
-	if (zst.len != sizeof(app_esb_data_t)) {
-		LOG_ERR("struct size mismatch: expect %d got %d",
-			sizeof(app_esb_data_t),
-			zst.len);
-		err = -EMSGSIZE;
-	}
-
-	if (!err) {
-		memcpy(&rx_data, zst.value, zst.len);
-	}
-#else
-	if (zcbor_bstr_decode(ctx->zs, &zst)) {
-		err = 0;
-	} else {
-		err = -EBADMSG;
-	}
-
-	if (expected_size != zst.len) {
-		LOG_ERR("struct size mismatch: expect %d got %d", expected_size, zst.len);
-		err = -EMSGSIZE;
-	}
-
-	if (!err) {
-		memcpy(struct_ptr, zst.value, zst.len);
-	} else {
-		LOG_ERR("decoding failed");
-	}
-#endif
-
+	LOG_INF("evt_type %i, p_rx_payload %x", evt_type, p_rx_payload);
 
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 
 	/* Notify the app new data has been received. */
 	if (!err) {
-		LOG_DBG("decoding ok: rx_cb 0x%x rx_payload 0x%x", p_rx_cb, p_rx_payload);
-		((app_esb_callback_t)p_rx_cb)((app_esb_event_t *)p_rx_payload);
+		LOG_DBG("decoding ok: rx_payload 0x%x", p_rx_payload);
+		switch(evt_type) {
+			case APP_ESB_EVT_TX_SUCCESS:
+				LOG_INF("ESB TX success");
+				break;
+			case APP_ESB_EVT_TX_FAIL:
+				LOG_INF("ESB TX failed");
+				break;
+			case APP_ESB_EVT_RX:
+				LOG_INF("RX received");
+				break;
+		}
+		//((app_esb_callback_t)p_rx_cb)((app_esb_event_t *)p_rx_payload);
 	} else {
 		LOG_ERR("%s: decoding error %d", __func__, err);
 	}

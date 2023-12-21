@@ -67,7 +67,7 @@ int main(void)
 			LOG_INF("ESB TX upload %.2x-%.2x", (tx_counter& 0xFF), ((tx_counter >> 8) & 0xFF));
 			tx_counter++;
 		}
-		k_sleep(K_MSEC(4000));
+		k_sleep(K_MSEC(1500));
 	}
 	return 0;
 }

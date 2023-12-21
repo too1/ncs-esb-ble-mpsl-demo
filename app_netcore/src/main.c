@@ -33,7 +33,7 @@ int main(void)
 	LOG_WRN("Change ESB_EVT_IRQ and ESB_EVT_IRQHandler in esb_peripherals.h to use SWI3 instead of SWI0!");
 
 	while (1) {
-		k_sleep(K_MSEC(4000));
+		k_sleep(K_MSEC(2000));
 		//LOG_INF("Alive");
 	}
 }
