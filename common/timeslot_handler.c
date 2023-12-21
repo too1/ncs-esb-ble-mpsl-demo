@@ -203,6 +203,9 @@ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot
 		case MPSL_TIMESLOT_SIGNAL_SESSION_IDLE:
 			LOG_INF("idle");
 
+			// Request a new timeslot in this case
+			schedule_request(REQ_MAKE_REQUEST);
+
 			signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
 			p_ret_val = &signal_callback_return_param;
 			set_timeslot_active_status(false);
