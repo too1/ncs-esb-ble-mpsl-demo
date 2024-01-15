@@ -19,6 +19,8 @@ MODIFIED SAMPLE TO INCLUDE EXTENSIONS ++
 
 #include <dk_buttons_and_leds.h>
 
+#include "app_bt_lbs.h"
+
 #include "app_esb.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -46,6 +48,12 @@ int main(void)
 	int err;
 
 	LOG_INF("ESB BLE Multiprotocol Example");
+
+	err = app_bt_init();
+	if (err) {
+		LOG_ERR("app_bt init failed (err %d)", err);
+		return err;
+	}
 
 	// Initialize the app_esb module, which handles timeslot and ESB configuration
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);

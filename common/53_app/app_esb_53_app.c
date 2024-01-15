@@ -45,6 +45,9 @@ NRF_RPC_IPC_TRANSPORT(esb_group_tr, DEVICE_DT_GET(DT_NODELABEL(ipc0)), "nrf_rpc_
  */
 NRF_RPC_GROUP_DEFINE(esb_group, "esb_group_id", &esb_group_tr, NULL, NULL, NULL);
 
+static app_esb_callback_t 	m_callback;
+static app_esb_event_t 		m_event;
+
 /* - Pull an error code from the RPC CBOR buffer
  * - Place it in `handler_data`, retrieved in the ESB API and passed to the application
  * - Also return it (as a convenience)
@@ -70,7 +73,7 @@ static int decode_error(const struct nrf_rpc_group *group,
 /* Default response handler. Decodes the error returned by the ESB API (ran
  * on the other core) and frees the CBOR buffer.
  */
-static void rsp_handler(const struct nrf_rpc_group *group,
+static void rpc_rsp_handler(const struct nrf_rpc_group *group,
 			struct nrf_rpc_cbor_ctx *ctx,
 			void *handler_data)
 {
@@ -79,15 +82,14 @@ static void rsp_handler(const struct nrf_rpc_group *group,
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 }
 
-int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
+static int rpc_esb_init(app_esb_config_t *p_config)
 {
 	int32_t err;
 	int err_rpc;
 	struct nrf_rpc_cbor_ctx ctx;
 	size_t config_len = sizeof(app_esb_config_t);
-	size_t addr_len = sizeof(struct esb_simple_addr);
 
-	NRF_RPC_CBOR_ALLOC(&esb_group, ctx, CBOR_BUF_SIZE + config_len + addr_len);
+	NRF_RPC_CBOR_ALLOC(&esb_group, ctx, CBOR_BUF_SIZE + config_len);
 
 	/* Serialize the `config` struct to a byte array, encode it and place it
 	 * in the CBOR buffer.
@@ -104,14 +106,9 @@ int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
 		return -EINVAL;
 	}
 
-	/* Ditto for `addr`. */
-	if (!zcbor_bstr_encode_ptr(ctx.zs, (const uint8_t *)p_addr, addr_len)) {
-		return -EINVAL;
-	}
+	LOG_DBG("RPC ESB Init cmd. Err %i", err);
 
-	LOG_DBG("send cmd %p 0x%x %p %p %p", &esb_group, RPC_COMMAND_INIT, &ctx, rsp_handler, &err);
-
-	err_rpc = nrf_rpc_cbor_cmd(&esb_group, RPC_COMMAND_INIT, &ctx, rsp_handler, &err);
+	err_rpc = nrf_rpc_cbor_cmd(&esb_group, RPC_COMMAND_ESB_INIT, &ctx, rpc_rsp_handler, &err);
 
 	/* Return a fixed error code if the RPC transport had an error. Else,
 	 * return the result of the API called on the other core.
@@ -123,7 +120,7 @@ int esb_simple_init(app_esb_config_t *p_config, struct esb_simple_addr *p_addr)
 	}
 }
 
-int esb_simple_tx(app_esb_data_t *packet)
+static int rpc_esb_tx(app_esb_data_t *packet)
 {
 	int32_t err;
 	int err_rpc;
@@ -147,9 +144,9 @@ int esb_simple_tx(app_esb_data_t *packet)
 		return -EINVAL;
 	}
 
-	LOG_DBG("send cmd %p 0x%x %p %p %p", &esb_group, RPC_COMMAND_TX, &ctx, rsp_handler, &err);
+	LOG_DBG("RPC ESB TX cmd: Byte 0: %x", packet->data[0]);
 
-	err_rpc = nrf_rpc_cbor_cmd(&esb_group, RPC_COMMAND_TX, &ctx, rsp_handler, &err);
+	err_rpc = nrf_rpc_cbor_cmd(&esb_group, RPC_COMMAND_ESB_TX, &ctx, rpc_rsp_handler, &err);
 
 	/* Return a fixed error code if the RPC transport had an error. Else,
 	 * return the result of the API called on the other core.
@@ -161,118 +158,12 @@ int esb_simple_tx(app_esb_data_t *packet)
 	}
 }
 
-static void simple_rx_rsp_handler(const struct nrf_rpc_group *group,
-				  struct nrf_rpc_cbor_ctx *ctx,
-				  void *handler_data)
-{
-	int err;
-	uint32_t p_rx_payload;
-	struct zcbor_string zst;
-
-	LOG_INF("simple_rx_rsp_handler");
-
-	/* Try pulling the error code. */
-	err = decode_error(group, ctx, handler_data);
-
-	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
-		err = -EBADMSG;
-	}
-	
-	/* Don't write data to the null pointer. */
-	if (!p_rx_payload) {
-		err = -EFAULT;
-	}
-
-	if (err || !zcbor_bstr_decode(ctx->zs, &zst)) {
-		err = -EBADMSG;
-	}
-
-	if (zst.len != sizeof(app_esb_data_t)) {
-		LOG_ERR("struct size mismatch: expect %d got %d",
-			sizeof(app_esb_data_t),
-			zst.len);
-		err = -EMSGSIZE;
-	}
-
-	if (!err) {
-		memcpy((app_esb_data_t *)p_rx_payload, zst.value, zst.len);
-		LOG_DBG("decoding ok: rx_payload 0x%x", p_rx_payload);
-	} else {
-		LOG_DBG("%s: decoding error %d", __func__, err);
-	}
-
-	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
-}
-
-/* RPC command helper. We use this to encode and send `rpc_simple_` API
- * commands over nRF RPC to the other side.
- */
-static int rpc_radio_cmd(enum rpc_command cmd,
-			 app_esb_data_t *p_rx_payload,
-			 app_esb_callback_t p_rx_cb)
-{
-	int32_t err;
-	int err_rpc;
-	struct nrf_rpc_cbor_ctx ctx;
-
-	/* Allocate an RPC CBOR buffer */
-	NRF_RPC_CBOR_ALLOC(&esb_group, ctx, CBOR_BUF_SIZE + sizeof(p_rx_payload));
-
-	/* Push the (local) payload destination pointer to the command buffer.
-	 * This will be returned to us by the other side when receiving the response.
-	 */
-	if (!zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_payload)) {
-		return -EINVAL;
-	}
-
-	/* If a (local again) callback function pointer was supplied, also push
-	 * it to the command buffer. It will be returned to us for each RX
-	 * event, that way our RPC RX event handler will be able to call the
-	 * user-supplied callback. This is only encoded and used for the async
-	 * API.
-	 */
-	if (p_rx_cb) {
-		if (!zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_cb)) {
-			return -EINVAL;
-		}
-	}
-
-	/* Send the command, parse the response using a handler.
-	 *
-	 * The other side will get the command, execute its command handler, and
-	 * reply with a response.
-	 *
-	 * On our side, the response handler, here `simple_rx_rsp_handler`, will
-	 * be called to parse the response buffer.
-	 *
-	 * It is only after `simple_rx_rsp_handler` returns that this call to
-	 * `nrf_rpc_cbor_cmd` will return.
-	 */
-	LOG_DBG("send cmd %p 0x%x %p %p %p", &esb_group, cmd, &ctx, simple_rx_rsp_handler, &err);
-	err_rpc = nrf_rpc_cbor_cmd(&esb_group, cmd, &ctx, simple_rx_rsp_handler, &err);
-	LOG_DBG("cmd returned");
-
-	if (err_rpc) {
-		return -EINVAL;
-	} else {
-		return err;
-	}
-}
-
-void app_esb_callback(app_esb_event_t *event)
-{
-	LOG_INF("JADAD");
-}
-
-static void rx_cb_handler(const struct nrf_rpc_group *group,
+static void rpc_esb_event_handler(const struct nrf_rpc_group *group,
 			  struct nrf_rpc_cbor_ctx *ctx,
 			  void *handler_data)
 {
 	int err;
 	uint32_t p_rx_payload;
-	//uint32_t p_rx_cb;
-	//struct zcbor_string zst;
-	static app_esb_data_t rx_data;
 	int evt_type;
 
 	/* Try pulling the error code. */
@@ -293,18 +184,10 @@ static void rx_cb_handler(const struct nrf_rpc_group *group,
 	/* Notify the app new data has been received. */
 	if (!err) {
 		LOG_DBG("decoding ok: rx_payload 0x%x", p_rx_payload);
-		switch(evt_type) {
-			case APP_ESB_EVT_TX_SUCCESS:
-				LOG_INF("ESB TX success");
-				break;
-			case APP_ESB_EVT_TX_FAIL:
-				LOG_INF("ESB TX failed");
-				break;
-			case APP_ESB_EVT_RX:
-				LOG_INF("RX received");
-				break;
-		}
-		//((app_esb_callback_t)p_rx_cb)((app_esb_event_t *)p_rx_payload);
+
+		// Call the event handler registered by the application 
+		m_event.evt_type = evt_type;
+		m_callback(&m_event);
 	} else {
 		LOG_ERR("%s: decoding error %d", __func__, err);
 	}
@@ -314,7 +197,7 @@ static void rx_cb_handler(const struct nrf_rpc_group *group,
 /* Register the RX event handler (function above). This will be sent from the
  * other side whenever we are in async mode and a packet has been received.
  */
-NRF_RPC_CBOR_EVT_DECODER(esb_group, rx_cb_handler, RPC_EVENT_RX_CB, rx_cb_handler, NULL);
+NRF_RPC_CBOR_EVT_DECODER(esb_group, rx_cb_handler, RPC_EVENT_ESB_CB, rpc_esb_event_handler, NULL);
 
 /* Initialize nRF RPC right after kernel boots, but before the application is
  * run.
@@ -347,9 +230,9 @@ SYS_INIT(serialization_init, POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY);
 int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 {
     static app_esb_config_t config;
-    static struct esb_simple_addr addr;
     config.mode = mode;
-    int err = esb_simple_init(&config, &addr);
+	m_callback = callback;
+    int err = rpc_esb_init(&config);
     if (err < 0) {
         return err;
     }
@@ -358,9 +241,6 @@ int app_esb_init(app_esb_mode_t mode, app_esb_callback_t callback)
 
 int app_esb_send(app_esb_data_t *tx_packet)
 {
-	//static app_esb_data_t local_packet[4];
-	//local_packet[0].data[1] = 12;
-	//memcpy(&local_packet[0], tx_packet, sizeof(tx_packet));
-    esb_simple_tx(tx_packet);
+    rpc_esb_tx(tx_packet);
     return 0;
 }

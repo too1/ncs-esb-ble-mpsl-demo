@@ -53,6 +53,7 @@ int main(void)
 	int err;
 
 	LOG_INF("ESB PRX BLE Multiprotocol Example");
+	
 	err = app_bt_init();
 	if (err) {
 		LOG_ERR("app_bt init failed (err %d)", err);
