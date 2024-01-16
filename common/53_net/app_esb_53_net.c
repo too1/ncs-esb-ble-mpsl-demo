@@ -27,7 +27,7 @@ LOG_MODULE_REGISTER(rpc_net, LOG_LEVEL_DBG);
 NRF_RPC_IPC_TRANSPORT(esb_group_tr, DEVICE_DT_GET(DT_NODELABEL(ipc0)), "nrf_rpc_ept");
 NRF_RPC_GROUP_DEFINE(esb_group, "esb_group_id", &esb_group_tr, NULL, NULL, NULL);
 
-static void rpc_esb_event_send(uint32_t evt_type, app_esb_data_t *p_rx_payload);
+static void rpc_esb_event_send(uint32_t evt_type, uint8_t  *rx_payload_buf, uint32_t rx_payload_length);
 
 static void work_send_evt_tx_success_func(struct k_work *item);
 static void work_send_evt_tx_fail_func(struct k_work *item);
@@ -36,6 +36,9 @@ static void work_send_evt_rx_received_func(struct k_work *item);
 K_WORK_DEFINE(m_work_send_evt_tx_success, work_send_evt_tx_success_func);
 K_WORK_DEFINE(m_work_send_evt_tx_fail, work_send_evt_tx_fail_func);
 K_WORK_DEFINE(m_work_send_evt_rx_received, work_send_evt_rx_received_func);
+
+static uint8_t *last_rx_buf;
+static uint32_t last_rx_length;
 
 void on_esb_callback(app_esb_event_t *event)
 {
@@ -50,6 +53,8 @@ void on_esb_callback(app_esb_event_t *event)
 			break;
 		case APP_ESB_EVT_RX:
 			LOG_INF("ESB RX: 0x%.2x-0x%.2x-0x%.2x-0x%.2x", event->buf[0], event->buf[1], event->buf[2], event->buf[3]);
+			last_rx_buf = event->buf;
+			last_rx_length = event->data_length;
 			k_work_submit(&m_work_send_evt_rx_received);
 			break;
 		default:
@@ -60,17 +65,17 @@ void on_esb_callback(app_esb_event_t *event)
 
 static void work_send_evt_tx_success_func(struct k_work *item)
 {
-	rpc_esb_event_send(APP_ESB_EVT_TX_SUCCESS, 0);
+	rpc_esb_event_send(APP_ESB_EVT_TX_SUCCESS, 0, 0);
 }
 
 static void work_send_evt_tx_fail_func(struct k_work *item)
 {
-	rpc_esb_event_send(APP_ESB_EVT_TX_FAIL, 0);
+	rpc_esb_event_send(APP_ESB_EVT_TX_FAIL, 0, 0);
 }
 
 static void work_send_evt_rx_received_func(struct k_work *item)
 {
-	rpc_esb_event_send(APP_ESB_EVT_RX, 0);
+	rpc_esb_event_send(APP_ESB_EVT_RX, last_rx_buf, last_rx_length);
 }
 
 static int decode_struct(struct nrf_rpc_cbor_ctx *ctx, void *struct_ptr, size_t expected_size)
@@ -187,7 +192,7 @@ static void rpc_esb_tx_handler(const struct nrf_rpc_group *group,
  * On the remote (app core), the rpc event will then call
  * the function stored in p_rx_cb_remote.
  */
-static void rpc_esb_event_send(uint32_t evt_type, app_esb_data_t *p_rx_payload)
+static void rpc_esb_event_send(uint32_t evt_type, uint8_t *rx_buf, uint32_t rx_length)
 {
 	int err = 0;
 	struct nrf_rpc_cbor_ctx ctx;
@@ -196,7 +201,8 @@ static void rpc_esb_event_send(uint32_t evt_type, app_esb_data_t *p_rx_payload)
 			   CBOR_BUF_SIZE +
 			   sizeof(err) +
 			   sizeof(evt_type) +
-			   sizeof(uint32_t));
+			   sizeof(uint32_t) + 
+			   rx_length);
 
 	/* Always encode the error */
 	if (!zcbor_int32_put(ctx.zs, err)) {
@@ -207,8 +213,14 @@ static void rpc_esb_event_send(uint32_t evt_type, app_esb_data_t *p_rx_payload)
 		err = -EINVAL;
 	}
 
-	if (err || !zcbor_uint32_put(ctx.zs, (uint32_t)p_rx_payload)) {
+	if (err || !zcbor_uint32_put(ctx.zs, rx_length)) {
 		err = -EINVAL;
+	}
+
+	if (rx_length > 0) {
+		if (err || !zcbor_bstr_encode_ptr(ctx.zs, rx_buf, rx_length)) {
+			err = -EINVAL;
+		}
 	}
 
 	if (!err) {

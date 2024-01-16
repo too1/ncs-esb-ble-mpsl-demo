@@ -55,17 +55,16 @@ int main(void)
 		return err;
 	}
 
-	// Initialize the app_esb module, which handles timeslot and ESB configuration
 	err = app_esb_init(APP_ESB_MODE_PTX, on_esb_callback);
 	if (err) {
 		LOG_ERR("app_esb init failed (err %d)", err);
 		return err;
 	}
+
 	static app_esb_data_t my_data;
 	my_data.len = 8;
 	int tx_counter = 0;
 	while (1) {
-		//LOG_INF("alive");
 		memcpy(my_data.data, (uint8_t*)&tx_counter, 4);
 		err = app_esb_send(&my_data);
 		if (err < 0) {

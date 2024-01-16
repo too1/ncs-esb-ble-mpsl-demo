@@ -47,6 +47,7 @@ NRF_RPC_GROUP_DEFINE(esb_group, "esb_group_id", &esb_group_tr, NULL, NULL, NULL)
 
 static app_esb_callback_t 	m_callback;
 static app_esb_event_t 		m_event;
+static uint8_t 				m_rx_buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
 
 /* - Pull an error code from the RPC CBOR buffer
  * - Place it in `handler_data`, retrieved in the ESB API and passed to the application
@@ -163,7 +164,8 @@ static void rpc_esb_event_handler(const struct nrf_rpc_group *group,
 			  void *handler_data)
 {
 	int err;
-	uint32_t p_rx_payload;
+	uint32_t rx_payload_length;
+	struct zcbor_string zst;
 	int evt_type;
 
 	/* Try pulling the error code. */
@@ -173,20 +175,41 @@ static void rpc_esb_event_handler(const struct nrf_rpc_group *group,
 		err = -EBADMSG;
 	}
 
-	if (err || !zcbor_uint32_decode(ctx->zs, &p_rx_payload)) {
+	if (err || !zcbor_uint32_decode(ctx->zs, &rx_payload_length)) {
 		err = -EBADMSG;
 	}
 
-	LOG_INF("evt_type %i, p_rx_payload %x", evt_type, p_rx_payload);
+	if (rx_payload_length > 0) {
+		// An RX payload is included in the message. Try to parse it. 
+		if (err || !zcbor_bstr_decode(ctx->zs, &zst)) {
+			err = -EBADMSG;
+		}
+
+		if (zst.len != rx_payload_length) {
+			LOG_ERR("struct size mismatch: expect %d got %d", rx_payload_length, zst.len);
+			err = -EMSGSIZE;
+		}
+
+		if (!err) {
+			memcpy(m_rx_buf, zst.value, zst.len);
+			LOG_DBG("decoding ok: rx_payload length %i", rx_payload_length);
+		} else {
+			LOG_ERR("%s: decoding error %d", __func__, err);
+		}
+	}
+
+	LOG_INF("evt_type %i, p_rx_payload length %i", evt_type, rx_payload_length);
 
 	nrf_rpc_cbor_decoding_done(&esb_group, ctx);
 
 	/* Notify the app new data has been received. */
 	if (!err) {
-		LOG_DBG("decoding ok: rx_payload 0x%x", p_rx_payload);
+		LOG_DBG("decoding ok: rx_payload length %i", rx_payload_length);
 
 		// Call the event handler registered by the application 
 		m_event.evt_type = evt_type;
+		m_event.buf = m_rx_buf;
+		m_event.data_length = rx_payload_length;
 		m_callback(&m_event);
 	} else {
 		LOG_ERR("%s: decoding error %d", __func__, err);
