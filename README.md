@@ -34,6 +34,7 @@ Requirements
 TODO
 ****
 
+- Implement TX failed handling (now packets will be retained forever in the app_esb buffers, until an ACK is received)
 - Reliability testing, on the nRF5340 in particular
 - More functionality in app_esb, primarily to allow changing ESB configuration and enabled/disabled status at runtime
 - Add basic send/receive functions to the app_bt_lbs module
