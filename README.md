@@ -24,7 +24,7 @@ The Bluetooth setup is handled by the app_bt_lbs.c module. Currently the only in
 Requirements
 ************
 
-- nRF Connect SDK v2.5.0
+- nRF Connect SDK v2.6.0
 - One of the following development kits:
     - nRF52DK
     - nRF52833DK

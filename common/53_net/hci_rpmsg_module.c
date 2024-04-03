@@ -402,8 +402,7 @@ static struct ipc_ept_cfg hci_ept_cfg = {
 int hci_rpmsg_init(void)
 {
 	int err;
-	const struct device *hci_ipc_instance =
-		DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_hci_rpmsg_ipc));
+	const struct device *hci_ipc_instance = DEVICE_DT_GET(DT_NODELABEL(ipc0));
 
 	LOG_DBG("Start");
 
